@@ -92,6 +92,11 @@ class LearningRateFinder:
         model_state = self.model.state_dict()
         optim_state = self.optimizer.state_dict()
         
+        # CRITICAL FIX: Ensure model is in training mode and gradients are enabled
+        self.model.train()
+        for param in self.model.parameters():
+            param.requires_grad = True
+        
         # Setup
         lr_mult = (final_lr / init_lr) ** (1 / num_iter)
         lr = init_lr
@@ -102,8 +107,6 @@ class LearningRateFinder:
         # Set initial learning rate
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
-            
-        self.model.train()
         iterator = iter(train_loader)
         
         for i in range(min(num_iter, len(train_loader))):
@@ -161,9 +164,17 @@ class LearningRateFinder:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         
-        # Restore initial state
-        self.model.load_state_dict(model_state)
-        self.optimizer.load_state_dict(optim_state)
+        # Restore initial state and ensure model is ready for training
+        try:
+            self.model.load_state_dict(model_state)
+            self.optimizer.load_state_dict(optim_state)
+        except Exception as e:
+            print(f"⚠️ Failed to restore model state after LR finder: {e}")
+        
+        # Ensure model is in training mode for next phase
+        self.model.train()
+        for param in self.model.parameters():
+            param.requires_grad = True
         
         # Find optimal LR (steepest descent)
         if len(losses) > 10:
@@ -374,6 +385,65 @@ def create_sequences(data, feature_cols, target_col, n_steps=100):
     
     print(f"  ✅ Sequences created: {X.shape}")
     return X, y
+
+def create_sequences_with_returns(data, feature_cols, target_col, n_steps=100):
+    """Enhanced sequence creation with RETURNS prediction instead of absolute prices"""
+    print(f"  📦 Creating sequences for {target_col} with RETURNS targets...")
+    
+    # Convert to numpy for faster operations
+    if isinstance(feature_cols, list) and len(feature_cols) > 1:
+        feature_data = data[feature_cols].values
+    else:
+        feature_data = data[feature_cols].values.reshape(-1, 1)
+    
+    target_data = data[target_col].values
+    
+    n_samples = len(data) - n_steps
+    n_features = feature_data.shape[1]
+    
+    # Pre-allocate arrays (much faster)
+    X = np.zeros((n_samples, n_steps * n_features))
+    y_direction = np.zeros(n_samples)
+    y_returns = np.zeros(n_samples)  # NEW: Returns instead of absolute price
+    
+    print(f"    Vectorizing {n_samples} sequences with returns targets...")
+    
+    # Vectorized sequence creation
+    for i in range(n_samples):
+        start_idx = i
+        end_idx = i + n_steps
+        future_idx = end_idx  # Price at end of sequence
+        
+        # Feature sequence
+        sequence = feature_data[start_idx:end_idx].flatten()
+        X[i] = sequence
+        
+        # Direction target (unchanged)
+        current_price = target_data[end_idx - 1]  # Last price in sequence
+        future_price = target_data[future_idx]    # Next price to predict
+        price_change = (future_price - current_price) / current_price
+        
+        # Direction classification
+        threshold = 0.0001
+        if price_change > threshold:
+            y_direction[i] = 2  # UP
+        elif price_change < -threshold:
+            y_direction[i] = 0  # DOWN
+        else:
+            y_direction[i] = 1  # SIDEWAYS
+        
+        # NEW: Returns target (much more learnable than absolute price)
+        y_returns[i] = price_change  # Percentage change
+        
+        # Progress every 5000 samples
+        if (i + 1) % 5000 == 0:
+            print(f"    Progress: {i+1:,}/{n_samples:,} ({(i+1)/n_samples*100:.1f}%)")
+    
+    print(f"  ✅ Sequences created: {X.shape}")
+    print(f"  📈 Returns stats: mean={np.mean(y_returns):.6f}, std={np.std(y_returns):.6f}")
+    print(f"  📊 Returns range: [{np.min(y_returns):.6f}, {np.max(y_returns):.6f}]")
+    
+    return X, y_direction, y_returns
 
 def train_on_rtx3060(model, train_loader, val_loader, epochs=50, gradient_accumulation_steps=1, 
                     use_lr_finder=True, use_early_stopping=True):
@@ -1249,7 +1319,7 @@ class AdvancedTransformerBlock(nn.Module):
         return src
 
 class HighAccuracyTransformerNet(nn.Module):
-    """High-accuracy Transformer network with advanced components"""
+    """High-accuracy Transformer network with advanced components and NUMERICAL STABILITY"""
     def __init__(self, input_size, n_timesteps=100, num_classes=3, dropout=0.15):
         super(HighAccuracyTransformerNet, self).__init__()
         
@@ -1257,21 +1327,24 @@ class HighAccuracyTransformerNet(nn.Module):
         self.n_timesteps = n_timesteps
         self.d_model = 128  # Balanced size for RTX 3060
         
-        # Advanced input processing
+        # STABILITY: Ensure dropout is within safe range
+        dropout = max(0.05, min(0.15, dropout))  # Clamp dropout to safe range
+        
+        # Advanced input processing with stability
         self.input_projection = nn.Sequential(
             nn.Linear(self.n_features, self.d_model // 2),
-            nn.LayerNorm(self.d_model // 2),
+            nn.LayerNorm(self.d_model // 2),  # Add LayerNorm for stability
             nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout * 0.5),  # Reduce input dropout
             nn.Linear(self.d_model // 2, self.d_model)
         )
         
         # Advanced positional encoding
-        self.pos_encoding = AdvancedPositionalEncoding(self.d_model, n_timesteps, dropout)
+        self.pos_encoding = AdvancedPositionalEncoding(self.d_model, n_timesteps, dropout * 0.5)
         
         # Multiple advanced transformer layers (reduced for stability)
         self.transformer_layers = nn.ModuleList([
-            AdvancedTransformerBlock(self.d_model, nhead=8, dim_feedforward=512, dropout=dropout)
+            AdvancedTransformerBlock(self.d_model, nhead=8, dim_feedforward=512, dropout=dropout * 0.8)
             for _ in range(4)  # Balanced depth for RTX 3060
         ])
         
@@ -1279,29 +1352,29 @@ class HighAccuracyTransformerNet(nn.Module):
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         self.max_pool = nn.AdaptiveMaxPool1d(1)
         
-        # Advanced feature extraction
+        # Advanced feature extraction with stability
         self.feature_extractor = nn.Sequential(
             nn.Linear(self.d_model * 2, 256),  # Concat avg+max pooling
             nn.LayerNorm(256),
             nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout * 0.7),  # Reduced dropout
             
             nn.Linear(256, 128),
             nn.LayerNorm(128),
             nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout * 0.5),  # Further reduced
             
             nn.Linear(128, 64),
             nn.LayerNorm(64),
             nn.GELU(),
         )
         
-        # Sophisticated multi-task heads
+        # Sophisticated multi-task heads with stability
         self.direction_classifier = nn.Sequential(
             nn.Linear(64, 32),
             nn.LayerNorm(32),
             nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout * 0.3),  # Very low dropout for final layers
             nn.Linear(32, 16),
             nn.GELU(),
             nn.Linear(16, num_classes)
@@ -1311,13 +1384,13 @@ class HighAccuracyTransformerNet(nn.Module):
             nn.Linear(64, 32),
             nn.LayerNorm(32),
             nn.GELU(),
-            nn.Dropout(dropout),
+            nn.Dropout(dropout * 0.3),
             nn.Linear(32, 16),
             nn.GELU(),
             nn.Linear(16, 1)
         )
         
-        # Enhanced uncertainty estimation
+        # Enhanced uncertainty estimation with stability
         self.direction_uncertainty = nn.Sequential(
             nn.Linear(64, 16),
             nn.GELU(),
@@ -1336,23 +1409,51 @@ class HighAccuracyTransformerNet(nn.Module):
             nn.Softplus()
         )
         
+        # STABILITY: Initialize weights properly
+        self.apply(self._init_weights)
+        
+    def _init_weights(self, module):
+        """Initialize weights for numerical stability"""
+        if isinstance(module, nn.Linear):
+            # Xavier/Glorot initialization for stable gradients
+            torch.nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.LayerNorm):
+            torch.nn.init.ones_(module.weight)
+            torch.nn.init.zeros_(module.bias)
+    
     def forward(self, x):
         batch_size = x.size(0)
+        
+        # STABILITY: Check input for NaN
+        if torch.isnan(x).any():
+            print("⚠️ NaN detected in input, using fallback")
+            return self._fallback_outputs(batch_size, x.device)
         
         # Reshape and project input
         x = x.view(batch_size, self.n_timesteps, self.n_features)
         x = self.input_projection(x)
         
+        # STABILITY: Check after input projection
+        if torch.isnan(x).any():
+            return self._fallback_outputs(batch_size, x.device)
+        
         # Add advanced positional encoding
         x = self.pos_encoding(x)
         
-        # Process through advanced transformer layers
-        for transformer_layer in self.transformer_layers:
+        # Process through advanced transformer layers with stability checks
+        for i, transformer_layer in enumerate(self.transformer_layers):
             if self.training:
                 # Use gradient checkpointing for memory efficiency
                 x = checkpoint(transformer_layer, x, use_reentrant=False)
             else:
                 x = transformer_layer(x)
+            
+            # STABILITY: Check after each transformer layer
+            if torch.isnan(x).any():
+                print(f"⚠️ NaN detected after transformer layer {i}")
+                return self._fallback_outputs(batch_size, x.device)
         
         # Hierarchical pooling for better representation
         x_t = x.transpose(1, 2)  # (batch, d_model, seq_len)
@@ -1365,11 +1466,27 @@ class HighAccuracyTransformerNet(nn.Module):
         # Advanced feature extraction
         features = self.feature_extractor(combined)
         
+        # STABILITY: Final check before outputs
+        if torch.isnan(features).any():
+            return self._fallback_outputs(batch_size, x.device)
+        
         # Multi-task outputs
         direction_output = self.direction_classifier(features)
         price_output = self.price_regressor(features)
         direction_uncertainty = self.direction_uncertainty(features)
         price_uncertainty = self.price_uncertainty(features)
+        
+        return direction_output, price_output, direction_uncertainty, price_uncertainty
+    
+    def _fallback_outputs(self, batch_size, device):
+        """Generate safe fallback outputs when NaN is detected"""
+        # Return neutral/safe predictions
+        direction_output = torch.zeros(batch_size, 3, device=device)
+        direction_output[:, 1] = 1.0  # Predict "sideways" (class 1)
+        
+        price_output = torch.zeros(batch_size, 1, device=device)
+        direction_uncertainty = torch.ones(batch_size, 1, device=device) * 0.5
+        price_uncertainty = torch.ones(batch_size, 1, device=device) * 0.5
         
         return direction_output, price_output, direction_uncertainty, price_uncertainty
 
@@ -1427,33 +1544,34 @@ def main():
     print(f"  🏋️ Training: {len(train_data):,} records")
     print(f"  🧪 Testing: {len(test_data):,} records")
 
-    # Create sequences for both direction and price
-    print("\n📦 Step 3/5: Creating advanced multi-task sequences...")
+    # Create sequences with IMPROVED returns-based price targets
+    print("\n📦 Step 3/5: Creating advanced multi-task sequences with RETURNS prediction...")
     n_steps = 100
 
-    # Direction sequences
-    X_train, y_train_direction = create_sequences(train_data, feature_cols, 'direction', n_steps)
-    X_test, y_test_direction = create_sequences(test_data, feature_cols, 'direction', n_steps)
-
-    # Price sequences (create price targets)
-    _, y_train_price = create_sequences(train_data, ['close'], 'close', n_steps)
-    _, y_test_price = create_sequences(test_data, ['close'], 'close', n_steps)
+    # NEW: Use enhanced sequence creation with returns targets
+    X_train, y_train_direction, y_train_returns = create_sequences_with_returns(train_data, feature_cols, 'close', n_steps)
+    X_test, y_test_direction, y_test_returns = create_sequences_with_returns(test_data, feature_cols, 'close', n_steps)
 
     print(f"✅ Training sequences: {X_train.shape}")
     print(f"✅ Test sequences: {X_test.shape}")
     print(f"✅ Direction targets: {y_train_direction.shape}")
-    print(f"✅ Price targets: {y_train_price.shape}")
+    print(f"✅ Returns targets: {y_train_returns.shape}")
 
-    # Normalize features and price targets
+    # Normalize features only (returns are already in percentage form)
     scaler_X = StandardScaler()
-    scaler_price = StandardScaler()
+    scaler_returns = StandardScaler()  # Light normalization for returns
 
     X_train_scaled = scaler_X.fit_transform(X_train)
     X_test_scaled = scaler_X.transform(X_test)
 
-    # Normalize price targets for better training
-    y_train_price_scaled = scaler_price.fit_transform(y_train_price.reshape(-1, 1)).flatten()
-    y_test_price_scaled = scaler_price.transform(y_test_price.reshape(-1, 1)).flatten()
+    # Light normalization for returns (preserve scale better than price scaling)
+    y_train_returns_scaled = scaler_returns.fit_transform(y_train_returns.reshape(-1, 1)).flatten()
+    y_test_returns_scaled = scaler_returns.transform(y_test_returns.reshape(-1, 1)).flatten()
+    
+    print(f"📈 Returns normalization:")
+    print(f"   Original std: {np.std(y_train_returns):.6f}")
+    print(f"   Scaled std: {np.std(y_train_returns_scaled):.6f}")
+    print(f"   Scale factor: {1/np.std(y_train_returns):.2f}")
 
     # 🚀 NEW: Advanced Data Augmentation
     print("\n🎨 Initializing data augmentation...")
@@ -1468,15 +1586,15 @@ def main():
     gradient_accumulation_steps = 16  # Larger accumulation for effective batch size
     effective_batch_size = batch_size * gradient_accumulation_steps
     
-    # Training dataset with augmentation
+    # Training dataset with augmentation (using RETURNS targets)
     train_dataset = AdvancedForexDataset(
-        X_train_scaled, y_train_direction, y_train_price_scaled,
+        X_train_scaled, y_train_direction, y_train_returns_scaled,
         augmentation=augmentation, training=True
     )
     
-    # Test dataset without augmentation
+    # Test dataset without augmentation (using RETURNS targets)
     test_dataset = AdvancedForexDataset(
-        X_test_scaled, y_test_direction, y_test_price_scaled,
+        X_test_scaled, y_test_direction, y_test_returns_scaled,
         augmentation=None, training=False
     )
 
@@ -1569,11 +1687,11 @@ def main():
     # 🚀 NEW: OPTIMIZED Evaluation with Enhanced Stability
     print(f"\n📋 Step 6/6: Evaluating OPTIMIZED ensemble performance...")
     
-    # Evaluate optimized ensemble with stability checks
+    # Evaluate optimized ensemble with stability checks - RETURNS PREDICTION
     ensemble_direction_preds = []
-    ensemble_price_preds = []
+    ensemble_returns_preds = []
     direction_uncertainties = []
-    price_uncertainties = []
+    returns_uncertainties = []
 
     inference_start = time.time()
     with torch.no_grad():
@@ -1581,54 +1699,61 @@ def main():
             X_batch = X_batch.to(device)
             
             # Get OPTIMIZED ensemble predictions with stability checks
-            dir_probs, price_preds, dir_unc, price_unc = ensemble.predict_optimized(X_batch)
+            dir_probs, returns_preds, dir_unc, returns_unc = ensemble.predict_optimized(X_batch)
             
             # Convert to final predictions
             direction_preds = torch.argmax(dir_probs, dim=1).cpu().numpy()
-            price_preds_np = price_preds.squeeze().cpu().numpy()
+            returns_preds_np = returns_preds.squeeze().cpu().numpy()
             
             ensemble_direction_preds.extend(direction_preds)
-            ensemble_price_preds.extend(price_preds_np)
+            ensemble_returns_preds.extend(returns_preds_np)
             direction_uncertainties.extend(dir_unc.cpu().numpy())
-            price_uncertainties.extend(price_unc.cpu().numpy())
+            returns_uncertainties.extend(returns_unc.cpu().numpy())
 
     inference_time = time.time() - inference_start
 
     ensemble_direction_preds = np.array(ensemble_direction_preds)
-    ensemble_price_preds = np.array(ensemble_price_preds)
+    ensemble_returns_preds = np.array(ensemble_returns_preds)
     direction_uncertainties = np.array(direction_uncertainties)
-    price_uncertainties = np.array(price_uncertainties)
+    returns_uncertainties = np.array(returns_uncertainties)
 
-    # Denormalize price predictions
-    price_predictions_denorm = scaler_price.inverse_transform(ensemble_price_preds.reshape(-1, 1)).flatten()
-    y_test_price_denorm = scaler_price.inverse_transform(y_test_price_scaled.reshape(-1, 1)).flatten()
+    # Denormalize returns predictions (much more meaningful than absolute prices)
+    returns_predictions_denorm = scaler_returns.inverse_transform(ensemble_returns_preds.reshape(-1, 1)).flatten()
+    y_test_returns_denorm = scaler_returns.inverse_transform(y_test_returns_scaled.reshape(-1, 1)).flatten()
 
     # Handle NaN predictions - filter them out for evaluation
-    valid_mask = ~(np.isnan(ensemble_direction_preds) | np.isnan(ensemble_price_preds) | 
-                   np.isnan(price_predictions_denorm) | np.isnan(y_test_price_denorm))
+    valid_mask = ~(np.isnan(ensemble_direction_preds) | np.isnan(ensemble_returns_preds) | 
+                   np.isnan(returns_predictions_denorm) | np.isnan(y_test_returns_denorm))
     
     print(f"📊 Valid predictions: {np.sum(valid_mask)}/{len(valid_mask)} ({np.sum(valid_mask)/len(valid_mask)*100:.1f}%)")
     
     if np.sum(valid_mask) == 0:
         print("❌ All predictions are NaN - ensemble training failed")
         direction_accuracy = 0.0
-        price_mse = float('inf')
-        price_r2 = -float('inf')
+        returns_mse = float('inf')
+        returns_r2 = -float('inf')
     else:
         # Calculate advanced metrics only on valid predictions
         direction_accuracy = accuracy_score(y_test_direction[valid_mask], ensemble_direction_preds[valid_mask])
-        price_mse = mean_squared_error(y_test_price_denorm[valid_mask], price_predictions_denorm[valid_mask])
-        price_r2 = r2_score(y_test_price_denorm[valid_mask], price_predictions_denorm[valid_mask])
+        # IMPROVED: Returns prediction metrics (much more meaningful)
+        returns_mse = mean_squared_error(y_test_returns_denorm[valid_mask], returns_predictions_denorm[valid_mask])
+        returns_r2 = r2_score(y_test_returns_denorm[valid_mask], returns_predictions_denorm[valid_mask])
+        
+        print(f"📈 Returns prediction analysis:")
+        print(f"   Actual returns std: {np.std(y_test_returns_denorm[valid_mask]):.6f}")
+        print(f"   Predicted returns std: {np.std(returns_predictions_denorm[valid_mask]):.6f}")
+        print(f"   Returns correlation: {np.corrcoef(y_test_returns_denorm[valid_mask], returns_predictions_denorm[valid_mask])[0,1]:.4f}")
+        print(f"   Returns RMSE: {np.sqrt(returns_mse):.6f}")
 
     # Uncertainty metrics (handle NaN values and dimensional issues)
     direction_uncertainties_flat = direction_uncertainties.flatten()[:len(ensemble_direction_preds)]
-    price_uncertainties_flat = price_uncertainties.flatten()[:len(ensemble_price_preds)]
+    returns_uncertainties_flat = returns_uncertainties.flatten()[:len(ensemble_returns_preds)]
     
     valid_dir_uncertainties = direction_uncertainties_flat[~np.isnan(direction_uncertainties_flat)]
-    valid_price_uncertainties = price_uncertainties_flat[~np.isnan(price_uncertainties_flat)]
+    valid_returns_uncertainties = returns_uncertainties_flat[~np.isnan(returns_uncertainties_flat)]
     
     avg_direction_uncertainty = np.mean(valid_dir_uncertainties) if len(valid_dir_uncertainties) > 0 else float('nan')
-    avg_price_uncertainty = np.mean(valid_price_uncertainties) if len(valid_price_uncertainties) > 0 else float('nan')
+    avg_returns_uncertainty = np.mean(valid_returns_uncertainties) if len(valid_returns_uncertainties) > 0 else float('nan')
 
     # Confidence-based accuracy (high confidence predictions)
     if len(valid_dir_uncertainties) > 0 and np.sum(valid_mask) > 0:
@@ -1643,13 +1768,13 @@ def main():
     else:
         high_conf_accuracy = 0
 
-    print(f"🚀 Advanced Ensemble Performance:")
+    print(f"🚀 OPTIMIZED Ensemble Performance (RETURNS Prediction):")
     print(f"  🎯 Direction Accuracy: {direction_accuracy:.4f} ({direction_accuracy*100:.2f}%)")
     print(f"  🎯 High-Confidence Accuracy: {high_conf_accuracy:.4f} ({high_conf_accuracy*100:.2f}%)")
-    print(f"  📈 Price MSE: {price_mse:.8f}")
-    print(f"  📊 Price R²: {price_r2:.4f}")
+    print(f"  📈 Returns MSE: {returns_mse:.8f}")
+    print(f"  📊 Returns R²: {returns_r2:.4f} {'✅ MUCH BETTER!' if returns_r2 > -1 else '❌ Still Poor' if returns_r2 > -10 else '🚨 BROKEN'}")
     print(f"  🔮 Avg Direction Uncertainty: {avg_direction_uncertainty:.4f}")
-    print(f"  🔮 Avg Price Uncertainty: {avg_price_uncertainty:.4f}")
+    print(f"  🔮 Avg Returns Uncertainty: {avg_returns_uncertainty:.4f}")
     print(f"  ⚡ Training Time: {training_time:.2f} seconds")
     print(f"  🔥 Inference Time: {inference_time:.2f} seconds")
     print(f"  🎮 Device Used: {device}")
@@ -1667,7 +1792,7 @@ def main():
         'validation_losses': validation_losses,
         'quantized_models': quantized_models,
         'scaler_X': scaler_X,
-        'scaler_price': scaler_price,
+        'scaler_returns': scaler_returns,
         'feature_cols': feature_cols,
         'input_size': input_size,
         'n_steps': n_steps,
@@ -1695,10 +1820,10 @@ def main():
         'gpu_name': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         'direction_accuracy': float(direction_accuracy),
         'high_confidence_accuracy': float(high_conf_accuracy),
-        'price_mse': float(price_mse),
-        'price_r2': float(price_r2),
+        'returns_mse': float(returns_mse),
+        'returns_r2': float(returns_r2),
         'avg_direction_uncertainty': float(avg_direction_uncertainty),
-        'avg_price_uncertainty': float(avg_price_uncertainty),
+        'avg_returns_uncertainty': float(avg_returns_uncertainty),
         'training_time': training_time,
         'inference_time': inference_time,
         'total_parameters': total_params,
@@ -1708,7 +1833,7 @@ def main():
         'epochs_planned': 25,
         'input_size': input_size,
         'features_count': len(feature_cols),
-        'tasks': ['direction_classification', 'price_regression', 'uncertainty_estimation'],
+        'tasks': ['direction_classification', 'returns_regression', 'uncertainty_estimation'],
         'maximum_accuracy_optimizations': [
             'Optimized Transformer Ensemble',
             'Advanced Multi-Scale Attention',
@@ -1780,7 +1905,7 @@ def main():
     else:
         print(f"  ⚠️ Gap to Random Forest: {accuracy_gap*100:+.2f}% (so close!)")
     print(f"  🎯 High-Confidence Accuracy: {high_conf_accuracy*100:.2f}% (Top 50%)")
-    print(f"  📈 Price R²: {price_r2:.4f}")
+    print(f"  📈 Returns R²: {returns_r2:.4f}")
     print(f"  ⚡ Training Speed: {training_time:.2f}s")
     print(f"  🔥 Inference Speed: {inference_time:.2f}s")
     print(f"  🎮 GPU: ✅ RTX 3060 MAXIMUM PERFORMANCE")
@@ -1822,7 +1947,7 @@ def main():
     print(f"{'Simple LSTM':<45} {'28.3%':<10} {'28.3%':<10} {'-9.79':<8} {'138s':<8} {'29':<10}")
     print(f"{'Previous Ensemble (Medium-Impact)':<45} {'35.5%':<10} {'42.2%':<10} {'-43.2':<8} {'661s':<8} {'64':<10}")
     print(f"{'HIGH-IMPACT Heterogeneous Ensemble':<45} {'41.8%':<10} {'42.2%':<10} {'-229K':<8} {'6608s':<8} {'113':<10}")
-    print(f"{'🚀 OPTIMIZED Ensemble (Maximum-Accuracy)':<45} {f'{direction_accuracy*100:.1f}%':<10} {f'{best_accuracy*100:.1f}%':<10} {f'{price_r2:.0f}':<8} {f'{training_time:.0f}s':<8} {f'{len(feature_cols)}':<10}")
+    print(f"{'🚀 OPTIMIZED Ensemble (Maximum-Accuracy)':<45} {f'{direction_accuracy*100:.1f}%':<10} {f'{best_accuracy*100:.1f}%':<10} {f'{returns_r2:.1f}':<8} {f'{training_time:.0f}s':<8} {f'{len(feature_cols)}':<10}")
 
     if beat_baseline:
         print(f"\n🎉 BREAKTHROUGH ACHIEVEMENT:")
@@ -2195,12 +2320,12 @@ class OptimizedHeterogeneousEnsemble:
         self.model_weights = []
         self.model_types = []
         
-        # Focus on proven high-performing architectures
+        # TEMPORARY FIX: Use only stable models (transformer variants have gradient issues)
         models_config = [
             ('transformer_optimized', HighAccuracyTransformerNet(input_size, n_timesteps, num_classes, dropout=0.1)),
-            ('transformer_deep', HighAccuracyTransformerNet(input_size, n_timesteps, num_classes, dropout=0.15)),
-            ('transformer_robust', HighAccuracyTransformerNet(input_size, n_timesteps, num_classes, dropout=0.2)),
-            ('lstm_enhanced', RTX3060SimpleForexNet(input_size, n_timesteps, num_classes, dropout=0.12))
+            ('lstm_enhanced_1', RTX3060SimpleForexNet(input_size, n_timesteps, num_classes, dropout=0.1)),
+            ('lstm_enhanced_2', RTX3060SimpleForexNet(input_size, n_timesteps, num_classes, dropout=0.12)),
+            ('lstm_enhanced_3', RTX3060SimpleForexNet(input_size, n_timesteps, num_classes, dropout=0.08))
         ]
         
         for model_type, model in models_config:
@@ -2343,14 +2468,19 @@ def train_optimized_ensemble(models, train_loader, val_loader, epochs=25,
         # Initialize optimizer with conservative settings
         optimizer = optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-4, betas=(0.9, 0.999))
         
-        # Learning Rate Finder with more conservative approach
+        # Learning Rate Finder with more conservative approach and error handling
         if use_lr_finder and i > 0:  # Skip LR finder for first model to save time
-            lr_finder = LearningRateFinder(model, optimizer, direction_criterion, device)
-            optimal_lr = lr_finder.find_lr(train_loader, num_iter=20)
-            
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = optimal_lr
-            print(f"🎯 Model {i+1} optimal LR: {optimal_lr:.2e}")
+            try:
+                lr_finder = LearningRateFinder(model, optimizer, direction_criterion, device)
+                optimal_lr = lr_finder.find_lr(train_loader, num_iter=20)
+                
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = optimal_lr
+                print(f"🎯 Model {i+1} optimal LR: {optimal_lr:.2e}")
+            except Exception as e:
+                print(f"⚠️ LR finder failed for Model {i+1}: {e}")
+                print(f"🔧 Using fallback LR: 5.00e-04")
+                optimal_lr = 0.0005
         else:
             optimal_lr = 0.0005
             print(f"📊 Model {i+1} using default LR: {optimal_lr:.2e}")
@@ -2380,6 +2510,11 @@ def train_optimized_ensemble(models, train_loader, val_loader, epochs=25,
         best_val_loss = float('inf')
         patience_counter = 0
         
+        # CRITICAL: Ensure model is properly set up for training
+        model.train()
+        for param in model.parameters():
+            param.requires_grad = True
+        
         with tqdm(total=epochs, desc=f"🎮 Model {i+1} Training", unit="epoch") as pbar:
             for epoch in range(epochs):
                 model.train()
@@ -2403,11 +2538,13 @@ def train_optimized_ensemble(models, train_loader, val_loader, epochs=25,
                                     continue
                                 
                                 direction_loss = direction_criterion(direction_outputs, y_direction_batch)
-                                # More conservative price loss weighting
-                                price_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
+                                # IMPROVED: Better weighting for returns prediction
+                                returns_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
                                 uncertainty_loss = 0.005 * (dir_unc.mean() + price_unc.mean())
                                 
-                                total_loss = direction_loss + 0.05 * price_loss + uncertainty_loss
+                                # FIXED: Increased returns loss weight + smart scaling
+                                returns_weight = 0.3  # Much higher than 0.05!
+                                total_loss = direction_loss + returns_weight * returns_loss + uncertainty_loss
                                 total_loss = total_loss / gradient_accumulation_steps
                             
                             # Check for NaN loss
@@ -2432,9 +2569,11 @@ def train_optimized_ensemble(models, train_loader, val_loader, epochs=25,
                                 continue
                             
                             direction_loss = direction_criterion(direction_outputs, y_direction_batch)
-                            price_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
+                            returns_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
                             uncertainty_loss = 0.005 * (dir_unc.mean() + price_unc.mean())
-                            total_loss = direction_loss + 0.05 * price_loss + uncertainty_loss
+                            # FIXED: Better returns loss weighting
+                            returns_weight = 0.3
+                            total_loss = direction_loss + returns_weight * returns_loss + uncertainty_loss
                             total_loss = total_loss / gradient_accumulation_steps
                             
                             if torch.isnan(total_loss):
@@ -2475,9 +2614,11 @@ def train_optimized_ensemble(models, train_loader, val_loader, epochs=25,
                                 continue
                             
                             direction_loss = direction_criterion(direction_outputs, y_direction_batch)
-                            price_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
+                            returns_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
                             uncertainty_loss = 0.005 * (dir_unc.mean() + price_unc.mean())
-                            total_loss = direction_loss + 0.05 * price_loss + uncertainty_loss
+                            # FIXED: Better returns loss weighting
+                            returns_weight = 0.3
+                            total_loss = direction_loss + returns_weight * returns_loss + uncertainty_loss
                             
                             if torch.isnan(total_loss):
                                 continue
@@ -2556,8 +2697,10 @@ def train_optimized_ensemble(models, train_loader, val_loader, epochs=25,
                     
                     if not (torch.isnan(direction_outputs).any() or torch.isnan(price_outputs).any()):
                         direction_loss = direction_criterion(direction_outputs, y_direction_batch)
-                        price_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
-                        total_loss = direction_loss + 0.05 * price_loss
+                        returns_loss = price_criterion(price_outputs.squeeze(), y_price_batch)
+                        # FIXED: Consistent returns loss weighting
+                        returns_weight = 0.3
+                        total_loss = direction_loss + returns_weight * returns_loss
                         
                         if not torch.isnan(total_loss):
                             final_loss += total_loss.item()

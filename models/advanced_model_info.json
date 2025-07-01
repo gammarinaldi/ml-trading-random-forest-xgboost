@@ -5,42 +5,42 @@
     "ensemble_size": 4,
     "ensemble_types": [
         "transformer_optimized",
-        "transformer_deep",
-        "transformer_robust",
-        "lstm_enhanced"
+        "lstm_enhanced_1",
+        "lstm_enhanced_2",
+        "lstm_enhanced_3"
     ],
     "ensemble_weights": [
-        0.2950865924358368,
-        0.2407567799091339,
-        0.1707485020160675,
-        0.29340818524360657
+        0.2960799038410187,
+        0.31098416447639465,
+        0.20301266014575958,
+        0.1899232715368271
     ],
     "validation_accuracies": [
-        0.4320911133493453,
-        0.4299992252266212,
-        0.15170062756643682,
-        0.4303091345781359
+        0.42442085689935694,
+        0.43007670256449987,
+        0.4182226698690633,
+        0.4182226698690633
     ],
     "validation_losses": [
-        0.4344386610359249,
-        64.14884172571767,
-        26.05095395947447,
-        1.3067657221661937
+        0.6825544599554326,
+        1.1064343614743488,
+        1.008264546052064,
+        1.171051575995908
     ],
-    "best_model_type": "transformer_optimized",
+    "best_model_type": "lstm_enhanced_1",
     "random_forest_baseline": 0.425,
     "beats_baseline": true,
     "device": "cuda",
     "gpu_name": "NVIDIA GeForce RTX 3060",
-    "direction_accuracy": 0.4299992252266212,
-    "high_confidence_accuracy": 0.4435146443514644,
-    "price_mse": 0.010153157640448907,
-    "price_r2": -33.597551360401305,
-    "avg_direction_uncertainty": 0.3320918679237366,
-    "avg_price_uncertainty": 32.877891540527344,
-    "training_time": 803.7437903881073,
-    "inference_time": 72.337486743927,
-    "total_parameters": 4675909,
+    "direction_accuracy": 0.43007670256449987,
+    "high_confidence_accuracy": 0.4374709437470944,
+    "returns_mse": 8.096885581012155e-07,
+    "returns_r2": -0.012414025742174317,
+    "avg_direction_uncertainty": 0.0799490362405777,
+    "avg_returns_uncertainty": 0.09901684522628784,
+    "training_time": 1192.7840864658356,
+    "inference_time": 50.82434630393982,
+    "total_parameters": 2294335,
     "batch_size": 64,
     "gradient_accumulation_steps": 16,
     "effective_batch_size": 1024,
@@ -49,7 +49,7 @@
     "features_count": 113,
     "tasks": [
         "direction_classification",
-        "price_regression",
+        "returns_regression",
         "uncertainty_estimation"
     ],
     "maximum_accuracy_optimizations": [
