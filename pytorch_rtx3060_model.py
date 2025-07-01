@@ -327,7 +327,8 @@ def add_technical_indicators(df, price_col='close'):
     
     return df
 
-def create_labels(df, price_col='close', threshold=0.0001):
+def create_labels_3class(df, price_col='close', threshold=0.0001):
+    """BACKUP: Original 3-class classification (DOWN/SIDEWAYS/UP)"""
     print("  🎯 Creating directional labels...")
     
     future_prices = df[price_col].shift(-1)
@@ -347,6 +348,34 @@ def create_labels(df, price_col='close', threshold=0.0001):
     names = {0: "DOWN", 1: "SIDEWAYS", 2: "UP"}
     for label, count in zip(unique, counts):
         print(f"      {names[label]}: {count:,} ({count/total*100:.1f}%)")
+    
+    return df
+
+def create_binary_labels(df, price_col='close', threshold=0.0001):
+    """Create BINARY UP/DOWN labels (removes SIDEWAYS confusion)"""
+    print("  🎯 Creating BINARY directional labels (UP/DOWN only)...")
+    
+    future_prices = df[price_col].shift(-1)
+    returns = (future_prices - df[price_col]) / df[price_col]
+    
+    # BINARY classification: DOWN(0), UP(1) - NO SIDEWAYS!
+    labels = (returns > threshold).astype(int)  # UP=1, DOWN=0
+    # Note: returns <= threshold becomes DOWN (includes small movements)
+    
+    df = df.iloc[:-1].copy()
+    df['direction'] = labels[:-1]
+    
+    unique, counts = np.unique(labels[:-1], return_counts=True)
+    total = len(labels[:-1])
+    
+    print(f"    📊 BINARY Label Distribution:")
+    names = {0: "DOWN", 1: "UP"}
+    for label, count in zip(unique, counts):
+        print(f"      {names[label]}: {count:,} ({count/total*100:.1f}%)")
+    
+    # Calculate what we "removed" by going binary
+    threshold_count = np.sum(np.abs(returns[:-1]) <= threshold)
+    print(f"    🗑️  Removed ambiguous movements: {threshold_count:,} ({threshold_count/total*100:.1f}%)")
     
     return df
 
@@ -423,14 +452,12 @@ def create_sequences_with_returns(data, feature_cols, target_col, n_steps=100):
         future_price = target_data[future_idx]    # Next price to predict
         price_change = (future_price - current_price) / current_price
         
-        # Direction classification
+        # BINARY direction classification (matches create_binary_labels)
         threshold = 0.0001
         if price_change > threshold:
-            y_direction[i] = 2  # UP
-        elif price_change < -threshold:
-            y_direction[i] = 0  # DOWN
+            y_direction[i] = 1  # UP
         else:
-            y_direction[i] = 1  # SIDEWAYS
+            y_direction[i] = 0  # DOWN (includes sideways movements)
         
         # NEW: Returns target (much more learnable than absolute price)
         y_returns[i] = price_change  # Percentage change
@@ -1480,9 +1507,10 @@ class HighAccuracyTransformerNet(nn.Module):
     
     def _fallback_outputs(self, batch_size, device):
         """Generate safe fallback outputs when NaN is detected"""
-        # Return neutral/safe predictions
-        direction_output = torch.zeros(batch_size, 3, device=device)
-        direction_output[:, 1] = 1.0  # Predict "sideways" (class 1)
+        # Return neutral/safe predictions for BINARY classification
+        direction_output = torch.zeros(batch_size, 2, device=device)
+        direction_output[:, 0] = 0.5  # Equal probability for DOWN (class 0)
+        direction_output[:, 1] = 0.5  # Equal probability for UP (class 1)
         
         price_output = torch.zeros(batch_size, 1, device=device)
         direction_uncertainty = torch.ones(batch_size, 1, device=device) * 0.5
@@ -1525,7 +1553,7 @@ def main():
 
     # Create labels
     print("\n🎯 Step 2/5: Creating labels...")
-    data_with_labels = create_labels(data.copy(), 'close', threshold=0.0001)
+    data_with_labels = create_binary_labels(data.copy(), 'close', threshold=0.0001)
     data_with_labels = data_with_labels.dropna()
 
     print(f"✅ Final dataset: {len(data_with_labels)} records")
@@ -1614,7 +1642,7 @@ def main():
     input_size = X_train.shape[1]
     
     # Create optimized ensemble focusing on high-performing transformers
-    ensemble = OptimizedHeterogeneousEnsemble(input_size, n_steps, num_classes=3)
+    ensemble = OptimizedHeterogeneousEnsemble(input_size, n_steps, num_classes=2)  # BINARY
     ensemble = ensemble.to(device)
     
     # Display model information
@@ -2315,7 +2343,7 @@ class AdvancedHeterogeneousEnsemble:
 # Advanced ensemble with optimized weighting and model selection
 class OptimizedHeterogeneousEnsemble:
     """Optimized ensemble focusing on high-performing models"""
-    def __init__(self, input_size, n_timesteps=100, num_classes=3):
+    def __init__(self, input_size, n_timesteps=100, num_classes=2):  # BINARY: UP/DOWN only
         self.models = []
         self.model_weights = []
         self.model_types = []
