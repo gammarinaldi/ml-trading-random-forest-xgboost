@@ -3,8 +3,7 @@ import numpy as np
 import joblib
 import random
 import os
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 import matplotlib
@@ -25,7 +24,7 @@ n_steps = 100
 
 def add_technical_indicators(df, price_col='close'):
     """
-    Add technical indicators to improve directional prediction
+    Add technical indicators to improve price prediction
     """
     print("  🔧 Adding technical indicators...")
     
@@ -53,7 +52,7 @@ def add_technical_indicators(df, price_col='close'):
     df['returns'] = df[price_col].pct_change()
     df['volatility_5'] = df['returns'].rolling(window=5).std()
     df['volatility_10'] = df['returns'].rolling(window=10).std()
-    df['volatility_20'] = df['returns'].rolling(window=20).std()
+    df['volatility_20'] = df[price_col].rolling(window=20).std()
     
     # Price momentum
     df['momentum_3'] = df[price_col] / df[price_col].shift(3) - 1
@@ -90,50 +89,9 @@ def add_technical_indicators(df, price_col='close'):
     
     return df
 
-def create_directional_labels(df, price_col='close', horizon=1, threshold=0.0001):
+def create_feature_sequences(data, feature_cols, target_col, n_steps):
     """
-    Create binary directional labels for classification (UP/DOWN only)
-    """
-    print(f"  🎯 Creating binary directional labels (horizon={horizon}, threshold={threshold:.4f})...")
-    
-    # Calculate future returns
-    future_prices = df[price_col].shift(-horizon)
-    returns = (future_prices - df[price_col]) / df[price_col]
-    
-    # Create binary directional labels - only UP (1) and DOWN (0)
-    # Filter out sideways movements to focus on clear directional moves
-    up_mask = returns > threshold
-    down_mask = returns < -threshold
-    
-    # Keep only clear directional movements
-    valid_mask = up_mask | down_mask
-    
-    # Create labels: UP = 1, DOWN = 0
-    labels = np.where(up_mask, 1, 0)
-    
-    # Remove last entries where we don't have future data
-    df = df.iloc[:-horizon].copy()
-    
-    # Filter to keep only clear directional movements
-    df_filtered = df[valid_mask[:-horizon]].copy()
-    df_filtered['direction'] = labels[:-horizon][valid_mask[:-horizon]]
-    
-    # Print label distribution
-    label_counts = pd.Series(df_filtered['direction']).value_counts().sort_index()
-    total = len(df_filtered)
-    original_total = len(df)
-    
-    print(f"    📊 Binary label distribution:")
-    print(f"      📉 DOWN (0): {label_counts.get(0, 0):,} ({label_counts.get(0, 0)/total*100:.1f}%)")
-    print(f"      📈 UP (1): {label_counts.get(1, 0):,} ({label_counts.get(1, 0)/total*100:.1f}%)")
-    print(f"    🔍 Filtered from {original_total:,} to {total:,} samples ({total/original_total*100:.1f}% kept)")
-    print(f"    ⚡ Removed {original_total-total:,} sideways movements for clearer signals")
-    
-    return df_filtered
-
-def create_feature_sequences(data, feature_cols, n_steps):
-    """
-    Create sequences using multiple features
+    Create sequences using multiple features for price prediction
     """
     X, y = [], []
     
@@ -141,13 +99,40 @@ def create_feature_sequences(data, feature_cols, n_steps):
         for i in range(n_steps, len(data)):
             # Get sequence of features
             sequence = data[feature_cols].iloc[i-n_steps:i].values.flatten()
-            target = data['direction'].iloc[i]
+            target = data[target_col].iloc[i]
             
             X.append(sequence)
             y.append(target)
             pbar.update(1)
     
     return np.array(X), np.array(y)
+
+def calculate_direction_accuracy(y_true_price, y_pred_price, current_prices, threshold=0.0001):
+    """
+    Calculate direction accuracy by comparing actual and predicted price movements
+    """
+    actual_directions = []
+    predicted_directions = []
+    
+    for i in range(len(y_true_price)):
+        # Actual direction
+        actual_change = (y_true_price[i] - current_prices[i]) / current_prices[i]
+        actual_dir = 1 if actual_change > threshold else 0
+        
+        # Predicted direction
+        pred_change = (y_pred_price[i] - current_prices[i]) / current_prices[i]
+        pred_dir = 1 if pred_change > threshold else 0
+        
+        # Only count clear movements
+        if abs(actual_change) > threshold:
+            actual_directions.append(actual_dir)
+            predicted_directions.append(pred_dir)
+    
+    if len(actual_directions) > 0:
+        accuracy = np.mean(np.array(actual_directions) == np.array(predicted_directions))
+        return accuracy, actual_directions, predicted_directions
+    else:
+        return 0.0, [], []
 
 # Load data from CSV file
 csv_file = 'EURUSDm_H1_201801020600_202412310000.csv'
@@ -197,75 +182,36 @@ except Exception as e:
     exit(1)
 
 # Enhanced feature engineering
-print("\n🔧 Step 1/8: Enhanced feature engineering...")
+print("\n🔧 Step 1/5: Enhanced feature engineering...")
 data = add_technical_indicators(data, 'close')
 
-# Create directional labels with different strategies
-print("\n🎯 Step 2/8: Creating directional labels...")
-data_with_labels = create_directional_labels(data.copy(), 'close', horizon=1, threshold=0.0001)
-
 # Remove NaN values from technical indicators
-data_with_labels = data_with_labels.dropna()
-print(f"✅ Data after cleaning: {len(data_with_labels)} records")
+data = data.dropna()
+print(f"✅ Data after cleaning: {len(data)} records")
 
 # Define feature columns (all technical indicators)
-feature_cols = [col for col in data_with_labels.columns if col not in ['close', 'direction']]
+feature_cols = [col for col in data.columns if col not in ['close']]
 print(f"📊 Using {len(feature_cols)} features: {feature_cols[:5]}... (showing first 5)")
 
 # Split data
-training_size = int(len(data_with_labels) * 0.70)
-train_data = data_with_labels.iloc[:training_size]
-test_data = data_with_labels.iloc[training_size:]
+training_size = int(len(data) * 0.70)
+train_data = data.iloc[:training_size]
+test_data = data.iloc[training_size:]
 
 print(f"\n📊 Data split:")
-print(f"  🏋️ Training: {len(train_data)} records ({training_size/len(data_with_labels)*100:.1f}%)")
-print(f"  🧪 Testing: {len(test_data)} records ({(len(data_with_labels)-training_size)/len(data_with_labels)*100:.1f}%)")
+print(f"  🏋️ Training: {len(train_data)} records ({training_size/len(data)*100:.1f}%)")
+print(f"  🧪 Testing: {len(test_data)} records ({(len(data)-training_size)/len(data)*100:.1f}%)")
 
 # Create sequences for training
-print("\n📦 Step 3/8: Creating feature sequences...")
-X_train, y_train = create_feature_sequences(train_data, feature_cols, n_steps)
-X_test, y_test = create_feature_sequences(test_data, feature_cols, n_steps)
+print("\n📦 Step 2/5: Creating feature sequences...")
+X_train, y_train = create_feature_sequences(train_data, feature_cols, 'close', n_steps)
+X_test, y_test = create_feature_sequences(test_data, feature_cols, 'close', n_steps)
 
 print(f"✅ Training sequences: {X_train.shape}")
 print(f"✅ Test sequences: {X_test.shape}")
 
-# Check class distribution
-print(f"\n📊 Training label distribution:")
-unique, counts = np.unique(y_train, return_counts=True)
-for label, count in zip(unique, counts):
-    direction_name = {0: "DOWN", 1: "UP"}[label]
-    print(f"  {direction_name}: {count:,} ({count/len(y_train)*100:.1f}%)")
-
-# Create and train directional classifier
-print("\n🌲 Step 4/8: Training Random Forest Classifier for direction...")
-
-# Using CPU Random Forest directly
-print("  💻 Using CPU Random Forest")
-direction_classifier = Pipeline([
-    ('scaler', StandardScaler()),
-    ('rf', RandomForestClassifier(
-        n_estimators=100,  # More trees for better accuracy
-        max_depth=15,
-        min_samples_split=10,
-        min_samples_leaf=5,
-        class_weight='balanced',  # Handle class imbalance
-        random_state=42,
-        n_jobs=-1
-    ))
-])
-
-# Train direction classifier (this may take a moment)
-print(f"  🔄 Training Random Forest Direction Classifier (100 trees)...")
-print(f"  ⏳ This may take 15-30 seconds depending on your CPU...")
-direction_classifier.fit(X_train, y_train)
-print("✅ Directional classifier training completed!")
-
-# Create regression model for price prediction
-print("\n📈 Step 5/8: Training Random Forest Regressor for price...")
-
-# Prepare data for regression (predict close price)
-y_train_price = train_data['close'].iloc[n_steps:].values
-y_test_price = test_data['close'].iloc[n_steps:].values
+# Create price regressor for price prediction
+print("\n📈 Step 3/5: Training XGBoost Price Regressor...")
 
 # Using XGBoost GPU directly for price regression
 import xgboost as xgb
@@ -276,8 +222,8 @@ price_regressor = Pipeline([
         objective='reg:squarederror',
         tree_method='hist',  # Updated method
         device='cuda',  # GPU acceleration (updated parameter)
-        n_estimators=100,  # More trees with GPU
-        max_depth=6,
+        n_estimators=150,  # More trees for better accuracy
+        max_depth=8,
         learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
@@ -287,99 +233,106 @@ price_regressor = Pipeline([
 ])
 print("  ✅ Using XGBoost GPU regressor!")
 
-# Train price regressor (this may take a moment)
-print(f"  🔄 Training XGBoost GPU Price Regressor (100 trees)...")
-print(f"  ⏳ This may take 10-20 seconds with GPU acceleration...")
-price_regressor.fit(X_train, y_train_price)
+# Train price regressor
+print(f"  🔄 Training XGBoost GPU Price Regressor (150 trees)...")
+print(f"  ⏳ This may take 15-30 seconds with GPU acceleration...")
+price_regressor.fit(X_train, y_train)
 print("✅ Price regressor training completed!")
 
-# Evaluate both models
-print("\n📋 Step 6/8: Evaluating model performance...")
-
-# Direction predictions
-y_pred_direction = direction_classifier.predict(X_test)
-direction_accuracy = accuracy_score(y_test, y_pred_direction)
+# Evaluate model
+print("\n📋 Step 4/5: Evaluating model performance...")
 
 # Price predictions
 y_pred_price = price_regressor.predict(X_test)
-price_mse = mean_squared_error(y_test_price, y_pred_price)
-price_r2 = r2_score(y_test_price, y_pred_price)
+price_mse = mean_squared_error(y_test, y_pred_price)
+price_r2 = r2_score(y_test, y_pred_price)
+
+# Calculate direction accuracy from price predictions
+current_prices_test = test_data['close'].iloc[n_steps-1:-1].values
+direction_accuracy, actual_dirs, pred_dirs = calculate_direction_accuracy(
+    y_test, y_pred_price, current_prices_test
+)
 
 print(f"📊 Model Performance:")
-print(f"  🎯 Direction Accuracy: {direction_accuracy:.4f} ({direction_accuracy*100:.2f}%)")
 print(f"  📉 Price MSE: {price_mse:.8f}")
 print(f"  📈 Price R²: {price_r2:.4f}")
+print(f"  🎯 Direction Accuracy (derived): {direction_accuracy:.4f} ({direction_accuracy*100:.2f}%)")
 
-# Detailed classification report
-print(f"\n📋 Detailed Binary Classification Report:")
-class_names = ['DOWN', 'UP']
-target_names = [class_names[int(i)] for i in sorted(np.unique(y_test))]
-print(classification_report(y_test, y_pred_direction, target_names=target_names))
+# Direction breakdown
+if len(actual_dirs) > 0:
+    actual_dirs = np.array(actual_dirs)
+    pred_dirs = np.array(pred_dirs)
+    
+    print(f"\n📋 Direction Performance Breakdown:")
+    for direction in [0, 1]:
+        mask = actual_dirs == direction
+        if np.sum(mask) > 0:
+            acc = np.mean(pred_dirs[mask] == actual_dirs[mask]) * 100
+            direction_name = {0: "DOWN", 1: "UP"}[direction]
+            print(f"  📊 {direction_name} accuracy: {acc:.1f}% ({np.sum(mask)} samples)")
 
 # Create visualizations
-print("\n📊 Step 7/8: Creating performance visualizations...")
+print("\n📊 Step 5/5: Creating performance visualizations...")
 
 fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
-# Confusion Matrix
-cm = confusion_matrix(y_test, y_pred_direction)
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=target_names, yticklabels=target_names, ax=axes[0,0])
-axes[0,0].set_title('Binary Direction Prediction Confusion Matrix')
-axes[0,0].set_xlabel('Predicted')
-axes[0,0].set_ylabel('Actual')
+# Price predictions vs actual
+n_plot = min(500, len(y_test))
+axes[0,0].plot(y_test[:n_plot], label='Actual', alpha=0.7, color='blue')
+axes[0,0].plot(y_pred_price[:n_plot], label='Predicted', alpha=0.7, color='red')
+axes[0,0].set_title('Price Predictions vs Actual')
+axes[0,0].set_xlabel('Time Steps')
+axes[0,0].set_ylabel('Price')
+axes[0,0].legend()
+axes[0,0].grid(True)
 
-# Direction accuracy over time
-correct_predictions = (y_test == y_pred_direction).astype(int)
-rolling_accuracy = pd.Series(correct_predictions).rolling(window=100).mean()
-axes[0,1].plot(rolling_accuracy)
-axes[0,1].set_title('Rolling Direction Accuracy (100-period window)')
+# Prediction errors
+errors = y_pred_price[:n_plot] - y_test[:n_plot]
+axes[0,1].plot(errors, alpha=0.7, color='orange')
+axes[0,1].axhline(y=0, color='black', linestyle='--', alpha=0.5)
+axes[0,1].set_title('Price Prediction Errors')
 axes[0,1].set_xlabel('Time Steps')
-axes[0,1].set_ylabel('Accuracy')
+axes[0,1].set_ylabel('Error')
 axes[0,1].grid(True)
 
-# Price predictions vs actual
-n_plot = min(500, len(y_test_price))
-axes[1,0].plot(y_test_price[:n_plot], label='Actual', alpha=0.7)
-axes[1,0].plot(y_pred_price[:n_plot], label='Predicted', alpha=0.7)
-axes[1,0].set_title('Price Predictions vs Actual')
-axes[1,0].set_xlabel('Time Steps')
-axes[1,0].set_ylabel('Price')
-axes[1,0].legend()
-axes[1,0].grid(True)
+# Direction accuracy over time (derived from price predictions)
+if len(actual_dirs) > 0:
+    direction_correct = (np.array(pred_dirs) == np.array(actual_dirs)).astype(int)
+    rolling_dir_acc = pd.Series(direction_correct).rolling(window=20, min_periods=1).mean()
+    axes[1,0].plot(rolling_dir_acc * 100, color='green', alpha=0.8)
+    axes[1,0].axhline(y=50, color='red', linestyle='--', alpha=0.5, label='Random (50%)')
+    axes[1,0].set_title('Rolling Direction Accuracy (Derived from Price)')
+    axes[1,0].set_xlabel('Time Steps')
+    axes[1,0].set_ylabel('Accuracy (%)')
+    axes[1,0].legend()
+    axes[1,0].grid(True)
 
-# Feature importance (top 15)
-feature_importance = direction_classifier.named_steps['rf'].feature_importances_
-# Create feature names for flattened sequences
-feature_names = []
-for i in range(n_steps):
-    for col in feature_cols:
-        feature_names.append(f"{col}_t-{n_steps-i}")
-
-importance_df = pd.DataFrame({
-    'feature': feature_names,
-    'importance': feature_importance
-}).sort_values('importance', ascending=False).head(15)
-
-axes[1,1].barh(range(len(importance_df)), importance_df['importance'])
-axes[1,1].set_yticks(range(len(importance_df)))
-axes[1,1].set_yticklabels(importance_df['feature'], fontsize=8)
-axes[1,1].set_title('Top 15 Feature Importances')
-axes[1,1].set_xlabel('Importance')
+# Sample price data with indicators
+sample_slice = data.tail(100)
+axes[1,1].plot(sample_slice['close'], label='Close Price', color='blue')
+axes[1,1].plot(sample_slice['sma_20'], label='SMA 20', color='orange', alpha=0.7)
+axes[1,1].plot(sample_slice['ema_10'], label='EMA 10', color='green', alpha=0.7)
+axes[1,1].fill_between(range(len(sample_slice)), 
+                      sample_slice['bb_lower'], sample_slice['bb_upper'], 
+                      alpha=0.2, color='gray', label='Bollinger Bands')
+axes[1,1].set_title('Sample Data with Technical Indicators')
+axes[1,1].set_xlabel('Time Steps')
+axes[1,1].set_ylabel('Price')
+axes[1,1].legend()
+axes[1,1].grid(True)
 
 plt.tight_layout()
-plt.savefig('price_direction_random_forest_xgboost_model_performance.png', dpi=300, bbox_inches='tight')
-tqdm.write("📊 Performance visualization saved as 'price_direction_random_forest_xgboost_model_performance.png'")
+plt.savefig('unified_price_model_performance.png', dpi=300, bbox_inches='tight')
+print("📊 Performance visualization saved as 'unified_price_model_performance.png'")
 plt.close()
 
-# Save models
-print("\n💾 Step 8/8: Saving improved models...")
+# Save model
+print("\n💾 Saving unified price model...")
 
 os.makedirs('models', exist_ok=True)
 
-# Save both models
-joblib.dump(direction_classifier, 'models/direction_classifier.pkl')
-joblib.dump(price_regressor, 'models/price_regressor.pkl')
+# Save only the price model
+joblib.dump(price_regressor, 'models/unified_price_regressor.pkl')
 
 # Save model metadata
 model_info = {
@@ -388,42 +341,44 @@ model_info = {
     'n_features': len(feature_cols),
     'training_size': len(X_train),
     'test_size': len(X_test),
-    'direction_accuracy': float(direction_accuracy),
     'price_mse': float(price_mse),
     'price_r2': float(price_r2),
-    'model_type': 'Enhanced Binary RandomForest with Technical Indicators',
-    'classifier_estimators': 100,
-    'regressor_estimators': 50,
-    'class_balance': 'balanced'
+    'direction_accuracy_derived': float(direction_accuracy),
+    'model_type': 'Unified XGBoost Price Regressor with Derived Direction',
+    'regressor_estimators': 150,
+    'approach': 'single_model_price_based_direction'
 }
 
 import json
-with open('models/price_direction_random_forest_xgboost_model_info.json', 'w') as f:
+with open('models/unified_price_model_info.json', 'w') as f:
     json.dump(model_info, f, indent=4)
 
-print(f"✅ Models saved:")
-print(f"  📊 Direction classifier: models/direction_classifier.pkl")
-print(f"  📈 Price regressor: models/price_regressor.pkl")
-print(f"  📋 Model info: models/price_direction_random_forest_xgboost_model_info.json")
+print(f"✅ Model saved:")
+print(f"  📈 Unified price regressor: models/unified_price_regressor.pkl")
+print(f"  📋 Model info: models/unified_price_model_info.json")
 
-# Test combined prediction
-print(f"\n🧪 Testing combined prediction...")
+# Test unified prediction
+print(f"\n🧪 Testing unified prediction...")
 if len(X_test) > 0:
     sample_idx = 0
     sample_features = X_test[sample_idx:sample_idx+1]
     
-    pred_direction = direction_classifier.predict(sample_features)[0]
     pred_price = price_regressor.predict(sample_features)[0]
-    actual_direction = y_test[sample_idx]
-    actual_price = y_test_price[sample_idx]
+    actual_price = y_test[sample_idx]
+    current_price = current_prices_test[sample_idx]
+    
+    # Derive direction from price prediction
+    pred_direction = 1 if pred_price > current_price else 0
+    actual_direction = 1 if actual_price > current_price else 0
     
     direction_names = {0: "DOWN ↘", 1: "UP ↗"}
     
-    print(f"🎯 Sample Prediction:")
-    print(f"  📊 Predicted Direction: {direction_names.get(pred_direction, 'Unknown')}")
+    print(f"🎯 Sample Unified Prediction:")
+    print(f"  💰 Current Price: {current_price:.5f}")
     print(f"  📈 Predicted Price: {pred_price:.5f}")
-    print(f"  ✅ Actual Direction: {direction_names.get(actual_direction, 'Unknown')}")
+    print(f"  📊 Derived Direction: {direction_names.get(pred_direction, 'Unknown')}")
     print(f"  ✅ Actual Price: {actual_price:.5f}")
+    print(f"  ✅ Actual Direction: {direction_names.get(actual_direction, 'Unknown')}")
     
     direction_correct = "✅ CORRECT" if pred_direction == actual_direction else "❌ WRONG"
     price_error = abs(pred_price - actual_price)
@@ -431,8 +386,9 @@ if len(X_test) > 0:
     print(f"  🎯 Direction: {direction_correct}")
     print(f"  📏 Price Error: {price_error:.5f} ({price_error/actual_price*10000:.1f} pips)")
 
-print(f"\n🎉 Enhanced binary model training completed!")
-print(f"🎯 Binary Direction Accuracy: {direction_accuracy*100:.2f}%")
+print(f"\n🎉 Unified model training completed!")
 print(f"📈 Price prediction R²: {price_r2:.4f}")
-print(f"⚡ Binary classification focuses on clear UP/DOWN movements")
-print(f"\n✨ Ready to use! Run the test script with these improved binary models.") 
+print(f"🎯 Direction accuracy (derived): {direction_accuracy*100:.2f}%")
+print(f"✨ Approach: Single price model with consistent direction derivation")
+print(f"🚀 No more contradictory predictions!")
+print(f"\n✨ Ready to use! Run the updated test script.") 
