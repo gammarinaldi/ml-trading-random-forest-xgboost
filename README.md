@@ -48,9 +48,10 @@ Two configurations are reported, because the difference between them is the whol
 
 The in-sample column looks respectable against a falling pair, but roughly 70% of that window is inside
 the model's training data. Restricted to the hold-out period, the system returns +0.70% over two years
-with a profit factor of 1.05 — economically zero. A profit factor of 1.05 across 86 trades is well
-inside the range that random trading with a 2:1 target produces, and it does not survive financing
-costs or any widening of the spread.
+with a profit factor of 1.05 — economically zero. The 34 wins in 86 trades are not distinguishable from
+chance: under the ~33% breakeven rate implied by the observed 1.6:1 win/loss size ratio, the probability
+of seeing at least 34 wins is 0.135. Nor does the result survive financing costs or any widening of the
+spread.
 
 The negative Sharpe alongside a positive return is arithmetically correct rather than a contradiction:
 the strategy is flat most of the time, so its mean hourly return does not clear the 2% annual risk-free
@@ -60,8 +61,9 @@ Parameter optimization was not re-run for this README. Its output is selection-b
 (see limitation 5), so reporting an optimized column here would overstate the result.
 
 For reference, buy-and-hold EURUSD over the full window returned -13.10% and over the hold-out window
--0.08%. The system's apparent advantage comes from being in the market only a small fraction of the
-time — 376 trades across seven years of hourly bars — not from prediction skill.
+-0.08%. The system is in the market only a small fraction of the time — 86 trades across two years of
+hourly bars in the hold-out — so it barely participates in either move. Its apparent advantage over
+buy-and-hold comes from that low exposure, not from prediction skill.
 
 Hold-out equity curve and drawdown:
 
