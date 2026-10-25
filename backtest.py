@@ -43,10 +43,10 @@ class Backtester:
     def load_model(self, model_path):
         if os.path.exists(model_path):
             model = joblib.load(model_path)
-            print(f"✅ Model loaded successfully")
+            print(f"Model loaded successfully")
             return model
         else:
-            raise FileNotFoundError(f"❌ Model not found at {model_path}")
+            raise FileNotFoundError(f"Model not found at {model_path}")
     
     def calculate_atr(self, df, period=14):
         """
@@ -457,7 +457,7 @@ class Backtester:
         """
         metrics = self.calculate_performance_metrics(equity_curve)
         if not metrics:
-            print("❌ Insufficient data for performance analysis")
+            print("Insufficient data for performance analysis")
             return
         
         df = metrics['equity_df']
@@ -541,7 +541,7 @@ Period: {metrics.get('years', 0):.2f} years
         plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"\n📊 Performance analysis plot saved: {plot_filename}")
+        print(f"\nPerformance analysis plot saved: {plot_filename}")
         
         # Create separate detailed equity curve plot
         self.plot_detailed_equity_curve(df, trades, f"{filename_prefix}_equity_curve.png")
@@ -590,7 +590,7 @@ Period: {metrics.get('years', 0):.2f} years
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         plt.close()
         
-        print(f"📈 Detailed equity curve saved: {filename}")
+        print(f"Detailed equity curve saved: {filename}")
     
     def run_backtest(self, data, n_steps=100, start_date=None, debug_mode=True):
         """Run backtest with enhanced performance tracking"""
@@ -601,12 +601,12 @@ Period: {metrics.get('years', 0):.2f} years
         if start_date:
             data = data[data.index >= start_date]
         
-        print(f"📊 Backtesting period: {data.index[0]} to {data.index[-1]}")
-        print(f"📈 Total periods: {len(data)}")
+        print(f"Backtesting period: {data.index[0]} to {data.index[-1]}")
+        print(f"Total periods: {len(data)}")
         
         # Exclude ATR from model features - it's only for risk management
         feature_cols = [col for col in data.columns if col not in ['close', 'atr', 'high', 'low']]
-        print(f"📊 Features for ML model: {len(feature_cols)} (excluding ATR risk management indicator)")
+        print(f"Features for ML model: {len(feature_cols)} (excluding ATR risk management indicator)")
         
         account_balance = self.initial_capital
         self.trades = []
@@ -614,13 +614,13 @@ Period: {metrics.get('years', 0):.2f} years
         
         # Prediction tracking statistics
         total_signals = 0               # Total prediction attempts made
-        valid_predictions = 0           # Successful predictions (signal ≠ None)
+        valid_predictions = 0           # Successful predictions (signal != None)
         confidence_above_threshold = 0  # Valid predictions meeting confidence criteria
         
         # Test periods - full dataset when not debugging
         test_periods = min(1000, len(data) - n_steps) if debug_mode else len(data) - n_steps
         
-        print(f"🔍 Testing {test_periods} periods...")
+        print(f"Testing {test_periods} periods...")
         
         with tqdm(total=test_periods, desc="Backtesting", unit="periods") as pbar:
             for i in range(n_steps, n_steps + test_periods):
@@ -702,13 +702,16 @@ Period: {metrics.get('years', 0):.2f} years
                                 
                                 if new_trade:
                                     self.trades.append(new_trade)
-                                    account_balance -= new_trade['transaction_cost']
-                                    
+                                    # Transaction cost is not deducted from the balance here:
+                                    # calculate_trade_pnl() already nets it out of the trade P&L
+                                    # when the position closes. Deducting it at both points
+                                    # double-counted every trade's costs.
+
                                     if debug_mode and len(self.trades) <= 5:
-                                        print(f"  📈 Trade {len(self.trades)}: {new_trade['signal']} at {current_price:.5f}")
-                                        print(f"     📊 ATR: {new_trade['atr_value']:.5f}")
-                                        print(f"     🛡️ Stop: {new_trade['stop_loss_pips']:.1f} pips, 🎯 Target: {new_trade['take_profit_pips']:.1f} pips")
-                                        print(f"     ⚖️ Risk:Reward = 1:{new_trade['risk_reward_ratio']:.2f}, Confidence: {confidence:.6f}")
+                                        print(f"Trade {len(self.trades)}: {new_trade['signal']} at {current_price:.5f}")
+                                        print(f"ATR: {new_trade['atr_value']:.5f}")
+                                        print(f"Stop: {new_trade['stop_loss_pips']:.1f} pips, Target: {new_trade['take_profit_pips']:.1f} pips")
+                                        print(f"Risk:Reward = 1:{new_trade['risk_reward_ratio']:.2f}, Confidence: {confidence:.6f}")
                 
                 # Record equity
                 self.equity_curve.append({
@@ -735,21 +738,21 @@ Period: {metrics.get('years', 0):.2f} years
         
         closed_trades = [t for t in self.trades if t['status'] == 'CLOSED']
         
-        print(f"✅ Backtest completed!")
-        print(f"📊 Total signals: {total_signals}")
-        print(f"📊 Valid predictions: {valid_predictions}")
-        print(f"📊 Confidence above threshold: {confidence_above_threshold}")
-        print(f"📈 Executed trades: {len(closed_trades)}")
+        print(f"Backtest completed!")
+        print(f"Total signals: {total_signals}")
+        print(f"Valid predictions: {valid_predictions}")
+        print(f"Confidence above threshold: {confidence_above_threshold}")
+        print(f"Executed trades: {len(closed_trades)}")
         
         # Calculate prediction success rates
         prediction_success_rate = (valid_predictions / total_signals * 100) if total_signals > 0 else 0
         confidence_rate = (confidence_above_threshold / valid_predictions * 100) if valid_predictions > 0 else 0
         execution_rate = (len(closed_trades) / confidence_above_threshold * 100) if confidence_above_threshold > 0 else 0
         
-        print(f"\n📈 PREDICTION ANALYSIS:")
-        print(f"  🎯 Prediction success rate: {prediction_success_rate:.1f}% ({valid_predictions}/{total_signals})")
-        print(f"  💪 High confidence rate: {confidence_rate:.1f}% ({confidence_above_threshold}/{valid_predictions})")  
-        print(f"  🚀 Trade execution rate: {execution_rate:.1f}% ({len(closed_trades)}/{confidence_above_threshold})")
+        print(f"\nPREDICTION ANALYSIS:")
+        print(f"Prediction success rate: {prediction_success_rate:.1f}% ({valid_predictions}/{total_signals})")
+        print(f"High confidence rate: {confidence_rate:.1f}% ({confidence_above_threshold}/{valid_predictions})")  
+        print(f"Trade execution rate: {execution_rate:.1f}% ({len(closed_trades)}/{confidence_above_threshold})")
         
         # Calculate performance metrics
         performance_metrics = self.calculate_performance_metrics(self.equity_curve)
@@ -900,7 +903,7 @@ class ParameterOptimizer:
             }
             
         except Exception as e:
-            print(f"  ❌ Error with params {params}: {e}")
+            print(f"Error with params {params}: {e}")
             return {
                 'params': params.copy(),
                 'final_balance': self.initial_capital,
@@ -915,12 +918,12 @@ class ParameterOptimizer:
         """
         Run parameter optimization using grid search with sampling
         """
-        print("🔧 Starting parameter optimization...")
+        print("Starting parameter optimization...")
         
         # Display optimization subset period
         data_end_date = self.data.index[-1]
         twelve_months_ago = data_end_date - pd.DateOffset(months=12)
-        print(f"📊 Optimization subset: {twelve_months_ago.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')} (last 12 months)")
+        print(f"Optimization subset: {twelve_months_ago.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')} (last 12 months)")
         
         param_space = self.define_parameter_space()
         
@@ -929,20 +932,20 @@ class ParameterOptimizer:
         param_values = list(param_space.values())
         all_combinations = list(itertools.product(*param_values))
         
-        print(f"📊 Total possible combinations: {len(all_combinations)}")
+        print(f"Total possible combinations: {len(all_combinations)}")
         
         # Sample combinations if too many
         if len(all_combinations) > max_combinations:
             random.seed(42)  # For reproducibility
             combinations_to_test = random.sample(all_combinations, max_combinations)
-            print(f"🎲 Randomly sampling {max_combinations} combinations for optimization")
+            print(f"Randomly sampling {max_combinations} combinations for optimization")
         else:
             combinations_to_test = all_combinations
-            print(f"🔍 Testing all {len(combinations_to_test)} combinations")
+            print(f"Testing all {len(combinations_to_test)} combinations")
         
         self.results = []
         
-        print(f"⏳ Running optimization tests...")
+        print(f"Running optimization tests...")
         with tqdm(total=len(combinations_to_test), desc="Parameter Optimization", unit="tests") as pbar:
             for i, combination in enumerate(combinations_to_test):
                 params = dict(zip(param_names, combination))
@@ -960,7 +963,7 @@ class ParameterOptimizer:
         # Sort by objective score
         self.results.sort(key=lambda x: x['objective_score'], reverse=True)
         
-        print(f"✅ Parameter optimization completed!")
+        print(f"Parameter optimization completed!")
         return self.get_best_parameters()
     
     def get_best_parameters(self, top_n=5):
@@ -968,7 +971,7 @@ class ParameterOptimizer:
         if not self.results:
             return None
         
-        print(f"\n🏆 TOP {top_n} PARAMETER SETS:")
+        print(f"\nTOP {top_n} PARAMETER SETS:")
         print("=" * 100)
         
         best_results = self.results[:top_n]
@@ -976,9 +979,9 @@ class ParameterOptimizer:
         for i, result in enumerate(best_results, 1):
             params = result['params']
             print(f"\n#{i} - Score: {result['objective_score']:.2f}")
-            print(f"   📊 Return: {result['total_return']*100:+.2f}% | Trades: {result['trade_count']} | Win Rate: {result['win_rate']*100:.1f}%")
-            print(f"   ⚙️ ATR Period: {params['atr_period']} | Stop Mult: {params['atr_stop_multiplier']} | Profit Mult: {params['atr_profit_multiplier']}")
-            print(f"   💰 Min Confidence: {params['min_confidence']:.4f} | Position Size: {params['max_position_size']*100:.1f}%")
+            print(f"Return: {result['total_return']*100:+.2f}% | Trades: {result['trade_count']} | Win Rate: {result['win_rate']*100:.1f}%")
+            print(f"ATR Period: {params['atr_period']} | Stop Mult: {params['atr_stop_multiplier']} | Profit Mult: {params['atr_profit_multiplier']}")
+            print(f"Min Confidence: {params['min_confidence']:.4f} | Position Size: {params['max_position_size']*100:.1f}%")
         
         return best_results[0]['params']  # Return best parameters
     
@@ -986,7 +989,7 @@ class ParameterOptimizer:
         """
         Validate best parameters on full dataset
         """
-        print(f"\n🧪 VALIDATING BEST PARAMETERS ON FULL DATASET...")
+        print(f"\nVALIDATING BEST PARAMETERS ON FULL DATASET...")
         print("=" * 60)
         
         # Run full backtest with best parameters
@@ -997,12 +1000,12 @@ class ParameterOptimizer:
         backtester.min_confidence = best_params['min_confidence']
         backtester.max_position_size = best_params['max_position_size']
         
-        print(f"🔧 OPTIMIZED PARAMETERS:")
-        print(f"  📊 ATR Period: {best_params['atr_period']} periods")
-        print(f"  🛡️ Stop Loss: ATR × {best_params['atr_stop_multiplier']}")
-        print(f"  🎯 Take Profit: ATR × {best_params['atr_profit_multiplier']}")
-        print(f"  💰 Min Confidence: {best_params['min_confidence']:.4f}")
-        print(f"  📏 Position Size: {best_params['max_position_size']*100:.1f}%")
+        print(f"OPTIMIZED PARAMETERS:")
+        print(f"ATR Period: {best_params['atr_period']} periods")
+        print(f"Stop Loss: ATR × {best_params['atr_stop_multiplier']}")
+        print(f"Take Profit: ATR × {best_params['atr_profit_multiplier']}")
+        print(f"Min Confidence: {best_params['min_confidence']:.4f}")
+        print(f"Position Size: {best_params['max_position_size']*100:.1f}%")
         
         # Run full validation backtest using complete dataset
         final_balance, trade_count = backtester.run_backtest(
@@ -1020,14 +1023,14 @@ class ParameterOptimizer:
             win_rate = len(winning_trades) / len(closed_trades) if closed_trades else 0
             
             # Generate comprehensive performance analysis and plots
-            print(f"\n📊 Generating performance analysis plots...")
+            print(f"\nGenerating performance analysis plots...")
             performance_metrics = backtester.plot_performance_analysis(
                 backtester.equity_curve, 
                 backtester.trades, 
                 "optimized_system"
             )
             
-            print(f"\n🎉 OPTIMIZED SYSTEM VALIDATION RESULTS:")
+            print(f"\nOPTIMIZED SYSTEM VALIDATION RESULTS:")
             print(f"=" * 60)
             print(f"Total Return: {total_return*100:+.2f}%")
             print(f"Final Balance: ${final_balance:,.2f}")
@@ -1036,7 +1039,7 @@ class ParameterOptimizer:
             
             # Enhanced performance metrics
             if performance_metrics:
-                print(f"\n📈 ADVANCED PERFORMANCE METRICS:")
+                print(f"\nADVANCED PERFORMANCE METRICS:")
                 print(f"Sharpe Ratio: {performance_metrics['sharpe_ratio']:.2f}")
                 print(f"Maximum Drawdown: {performance_metrics['max_drawdown']*100:.2f}%")
                 print(f"Max Drawdown Duration: {performance_metrics['max_drawdown_duration']} periods")
@@ -1061,7 +1064,7 @@ class ParameterOptimizer:
                     take_profit_pips = [t.get('take_profit_pips', 0) for t in closed_trades if t.get('take_profit_pips')]
                     risk_reward_ratios = [t.get('risk_reward_ratio', 0) for t in closed_trades if t.get('risk_reward_ratio')]
                     
-                    print(f"\n📊 OPTIMIZED RISK MANAGEMENT STATS:")
+                    print(f"\nOPTIMIZED RISK MANAGEMENT STATS:")
                     print(f"Average ATR: {sum(atr_values)/len(atr_values):.5f}")
                     print(f"Average Stop Loss: {sum(stop_loss_pips)/len(stop_loss_pips):.1f} pips")
                     print(f"Average Take Profit: {sum(take_profit_pips)/len(take_profit_pips):.1f} pips")
@@ -1070,34 +1073,34 @@ class ParameterOptimizer:
             # Performance assessment with Sharpe ratio consideration
             sharpe_score = performance_metrics.get('sharpe_ratio', 0) if performance_metrics else 0
             if total_return > 0.1 and sharpe_score > 1.0:
-                print(f"\n🚀 EXCELLENT! Optimized system shows strong performance with good risk-adjusted returns!")
+                print(f"\nEXCELLENT! Optimized system shows strong performance with good risk-adjusted returns!")
             elif total_return > 0.05 and sharpe_score > 0.5:
-                print(f"\n✅ GOOD! Optimized system shows solid positive returns with reasonable Sharpe ratio!")
+                print(f"\nGOOD! Optimized system shows solid positive returns with reasonable Sharpe ratio!")
             elif total_return > 0:
-                print(f"\n👍 POSITIVE! Optimized system shows modest gains!")
+                print(f"\nPOSITIVE! Optimized system shows modest gains!")
             else:
-                print(f"\n⚠️ Optimization helped but system still needs work")
+                print(f"\nOptimization helped but system still needs work")
                 
-            print(f"\n📊 Performance analysis plots generated:")
+            print(f"\nPerformance analysis plots generated:")
             print(f"  - optimized_system_performance_analysis.png (4-panel comprehensive analysis)")
             print(f"  - optimized_system_equity_curve.png (detailed equity curve with drawdown)")
-            print(f"💡 Parameter optimization complete! System ready for further refinement.")
+            print(f"Parameter optimization complete! System ready for further refinement.")
             
         return final_balance, trade_count
 
 def main():
     """Run the backtesting system with optional parameter optimization"""
-    print("🚀 Backtesting System with Parameter Optimization\n")
+    print("Backtesting System with Parameter Optimization\n")
     
     csv_file = 'EURUSDm_H1_201801020600_202412310000.csv'
     
     if not os.path.exists(csv_file):
-        print(f"❌ Data file {csv_file} not found!")
+        print(f"Data file {csv_file} not found!")
         return
     
     try:
         # Load data
-        print(f"📈 Loading historical data from {csv_file}")
+        print(f"Loading historical data from {csv_file}")
         df = pd.read_csv(csv_file, sep='\t')
         
         if '<DATE>' in df.columns and '<TIME>' in df.columns and '<CLOSE>' in df.columns:
@@ -1114,27 +1117,27 @@ def main():
             data_start_date = data.index[0]
             data_end_date = data.index[-1]
             
-            print(f"✅ Loaded {len(data)} price records")
-            print(f"📊 Historical data period: {data_start_date.strftime('%Y-%m-%d %H:%M')} to {data_end_date.strftime('%Y-%m-%d %H:%M')}")
-            print(f"📈 Total duration: {(data_end_date - data_start_date).days} days")
+            print(f"Loaded {len(data)} price records")
+            print(f"Historical data period: {data_start_date.strftime('%Y-%m-%d %H:%M')} to {data_end_date.strftime('%Y-%m-%d %H:%M')}")
+            print(f"Total duration: {(data_end_date - data_start_date).days} days")
         else:
             raise ValueError("Unsupported data format")
         
         # Ask user for optimization preference
-        print(f"\n🔧 BACKTESTING OPTIONS:")
+        print(f"\nBACKTESTING OPTIONS:")
         print(f"=" * 70)
-        print(f"1️⃣  Quick Test (Default Parameters)")
+        print(f"1) Quick Test (Default Parameters)")
         print(f"    • Uses pre-set trading parameters")
         print(f"    • Tests on full historical dataset")
         print(f"    • Fast execution (~2-5 minutes)")
         print(f"    • Good for initial system testing")
         print(f"")
-        print(f"2️⃣  Parameter Optimization Only")
+        print(f"2) Parameter Optimization Only")
         print(f"    • Finds best parameters on 12-month subset")
         print(f"    • Medium execution (~30-60 minutes)")
         print(f"    • Shows top 5 parameter combinations")
         print(f"")
-        print(f"3️⃣  Full Optimization + Validation (Recommended)")
+        print(f"3) Full Optimization + Validation (Recommended)")
         print(f"    • Optimizes parameters + validates on full dataset")
         print(f"    • Longer execution (~60-90 minutes)")
         print(f"    • Complete performance analysis with plots")
@@ -1145,85 +1148,85 @@ def main():
         # Interactive choice selection
         while True:
             try:
-                choice = input(f"\n🎯 Please select an option (1, 2, or 3): ").strip()
+                choice = input(f"\nPlease select an option (1, 2, or 3): ").strip()
                 if choice in ["1", "2", "3"]:
-                    print(f"✅ Selected option {choice}")
+                    print(f"Selected option {choice}")
                     
                     # Additional options for optimization
                     if choice in ["2", "3"]:
-                        print(f"\n🔧 OPTIMIZATION SETTINGS:")
+                        print(f"\nOPTIMIZATION SETTINGS:")
                         print(f"   Fast mode: 200 combinations (~30 min)")
-                        print(f"   Thorough mode: 1600 combinations (~2-3 hours)")
+                        print(f"   Thorough mode: all 1280 combinations (~2-3 hours)")
                         
                         while True:
                             try:
-                                opt_mode = input(f"\n⚡ Choose optimization mode (fast/thorough) [fast]: ").strip().lower()
+                                opt_mode = input(f"\nChoose optimization mode (fast/thorough) [fast]: ").strip().lower()
                                 if opt_mode == "" or opt_mode == "fast":
                                     max_combinations = 200
-                                    print(f"✅ Using fast optimization (200 combinations)")
+                                    print(f"Using fast optimization (200 combinations)")
                                     break
                                 elif opt_mode == "thorough":
-                                    max_combinations = 1600
-                                    print(f"✅ Using thorough optimization (1600 combinations)")
+                                    max_combinations = 1280
+                                    print(f"Using thorough optimization (all 1280 combinations)")
                                     break
                                 else:
-                                    print(f"❌ Invalid mode '{opt_mode}'. Please enter 'fast' or 'thorough'.")
+                                    print(f"Invalid mode '{opt_mode}'. Please enter 'fast' or 'thorough'.")
                             except KeyboardInterrupt:
-                                print(f"\n\n👋 Operation cancelled by user.")
+                                print(f"\n\nOperation cancelled by user.")
                                 return
                     else:
                         max_combinations = 200  # Default for option 1
                     
                     break
                 else:
-                    print(f"❌ Invalid choice '{choice}'. Please enter 1, 2, or 3.")
+                    print(f"Invalid choice '{choice}'. Please enter 1, 2, or 3.")
             except KeyboardInterrupt:
-                print(f"\n\n👋 Operation cancelled by user.")
+                print(f"\n\nOperation cancelled by user.")
                 return
             except Exception as e:
-                print(f"❌ Input error: {e}. Please try again.")
+                print(f"Input error: {e}. Please try again.")
         
         print(f"\n" + "="*70)
-        print(f"🚀 Starting execution with option {choice}...")
+        print(f"Starting execution with option {choice}...")
         print(f"=" * 70)
         
         # Confirmation for time-intensive operations
         if choice in ["2", "3"]:
             estimated_time = "30-60 minutes" if max_combinations == 200 else "2-3 hours"
-            print(f"\n⏰ Estimated execution time: {estimated_time}")
-            print(f"📊 This will test {max_combinations} parameter combinations")
+            print(f"\nEstimated execution time: {estimated_time}")
+            print(f"This will test {max_combinations} parameter combinations")
             
-            confirm = input(f"\n❓ Continue with optimization? (y/n) [y]: ").strip().lower()
+            confirm = input(f"\nContinue with optimization? (y/n) [y]: ").strip().lower()
             if confirm == "n" or confirm == "no":
-                print(f"\n👋 Operation cancelled by user. Returning to options...")
+                print(f"\nOperation cancelled by user. Returning to options...")
                 return
             elif confirm == "" or confirm == "y" or confirm == "yes":
-                print(f"✅ Starting optimization process...")
+                print(f"Starting optimization process...")
             else:
-                print(f"✅ Assuming 'yes' and continuing...")
+                print(f"Assuming 'yes' and continuing...")
         
-        print(f"\n🎬 EXECUTION STARTING...\n")
+        print(f"\nEXECUTION STARTING...\n")
         
         if choice == "1":
             # Run with default parameters only
-            print(f"⚡ OPTION 1: QUICK TEST WITH DEFAULT PARAMETERS")
+            print(f"OPTION 1: QUICK TEST WITH DEFAULT PARAMETERS")
             print(f"-" * 50)
             
             start_time = datetime.now()
-            print(f"🕐 Started at: {start_time.strftime('%H:%M:%S')}")
-            print(f"📊 Using full historical dataset: {data_start_date.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')}")
+            print(f"Started at: {start_time.strftime('%H:%M:%S')}")
+            print(f"Using full historical dataset: {data_start_date.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')}")
             
             backtester = Backtester(
                 model_path='models/unified_price_regressor.pkl',
                 initial_capital=1000
             )
             
-            print(f"\n🔧 DEFAULT PARAMETERS:")
-            print(f"  📊 ATR Period: {backtester.atr_period} periods")
-            print(f"  🛡️ Stop Loss: ATR × {backtester.atr_stop_multiplier}")
-            print(f"  🎯 Take Profit: ATR × {backtester.atr_profit_multiplier}")
-            print(f"  💰 Min Confidence: {backtester.min_confidence:.4f}")
-            print(f"  📏 Position Size: {backtester.max_position_size*100:.1f}%")
+            print(f"\nDEFAULT PARAMETERS:")
+            print(f"ATR Period: {backtester.atr_period} periods")
+            print(f"Stop Loss: ATR × {backtester.atr_stop_multiplier}")
+            print(f"Take Profit: ATR × {backtester.atr_profit_multiplier}")
+            print(f"Min Confidence: {backtester.min_confidence:.4f}")
+            print(f"Position Size: {backtester.max_position_size*100:.1f}%")
             
             # Use full dataset - no hardcoded start_date
             final_balance, trade_count = backtester.run_backtest(
@@ -1235,25 +1238,25 @@ def main():
             
             end_time = datetime.now()
             duration = end_time - start_time
-            print(f"🕐 Completed at: {end_time.strftime('%H:%M:%S')} (Duration: {duration})")
+            print(f"Completed at: {end_time.strftime('%H:%M:%S')} (Duration: {duration})")
             
             # Show results
             if trade_count > 0:
-                print(f"\n🎉 Generated {trade_count} trades with default parameters")
+                print(f"\nGenerated {trade_count} trades with default parameters")
             else:
-                print(f"\n❌ No trades generated with default parameters")
-                print(f"🔍 Consider running parameter optimization (option 2 or 3)")
+                print(f"\nNo trades generated with default parameters")
+                print(f"Consider running parameter optimization (option 2 or 3)")
         
         elif choice in ["2", "3"]:
             # Run parameter optimization
             mode_name = "PARAMETER OPTIMIZATION ONLY" if choice == "2" else "FULL OPTIMIZATION + VALIDATION"
-            print(f"🔧 OPTION {choice}: {mode_name}")
+            print(f"OPTION {choice}: {mode_name}")
             print(f"-" * 50)
             
             start_time = datetime.now()
-            print(f"🕐 Started at: {start_time.strftime('%H:%M:%S')}")
-            print(f"📊 Testing {max_combinations} parameter combinations...")
-            print(f"📈 Full dataset available: {data_start_date.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')}")
+            print(f"Started at: {start_time.strftime('%H:%M:%S')}")
+            print(f"Testing {max_combinations} parameter combinations...")
+            print(f"Full dataset available: {data_start_date.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')}")
             
             optimizer = ParameterOptimizer(
                 data=data,
@@ -1262,44 +1265,44 @@ def main():
             )
             
             # Run optimization - adjust max_combinations to control testing intensity:
-            # max_combinations=200   → Test 200 random samples (fast, ~1 hour)
-            # max_combinations=1600  → Test all combinations (thorough, ~8 hours)
+            # max_combinations=200 Test 200 random samples (fast, ~1 hour)
+            # max_combinations=1280 Test all combinations (thorough, ~8 hours)
             best_params = optimizer.optimize_parameters(max_combinations=max_combinations)
             
             optimization_time = datetime.now()
             opt_duration = optimization_time - start_time
-            print(f"🕐 Optimization completed at: {optimization_time.strftime('%H:%M:%S')} (Duration: {opt_duration})")
+            print(f"Optimization completed at: {optimization_time.strftime('%H:%M:%S')} (Duration: {opt_duration})")
             
             if choice == "3" and best_params:
-                print(f"\n🧪 Starting full dataset validation...")
-                print(f"📊 Validating on complete historical period: {data_start_date.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')}")
+                print(f"\nStarting full dataset validation...")
+                print(f"Validating on complete historical period: {data_start_date.strftime('%Y-%m-%d')} to {data_end_date.strftime('%Y-%m-%d')}")
                 
                 # Validate best parameters on full dataset
                 optimizer.validate_best_parameters(best_params)
                 
                 end_time = datetime.now()
                 total_duration = end_time - start_time
-                print(f"🕐 Full validation completed at: {end_time.strftime('%H:%M:%S')} (Total Duration: {total_duration})")
+                print(f"Full validation completed at: {end_time.strftime('%H:%M:%S')} (Total Duration: {total_duration})")
             elif best_params:
-                print(f"\n✅ Parameter optimization completed!")
-                print(f"💡 Best parameters found. Use option 3 to run full validation.")
+                print(f"\nParameter optimization completed!")
+                print(f"Best parameters found. Use option 3 to run full validation.")
         
         else:
-            print(f"❌ Invalid choice. Please run again and select 1, 2, or 3.")
+            print(f"Invalid choice. Please run again and select 1, 2, or 3.")
             
         print(f"\n" + "="*70)
-        print(f"🎉 EXECUTION COMPLETED SUCCESSFULLY!")
+        print(f"EXECUTION COMPLETED SUCCESSFULLY!")
         print(f"=" * 70)
-        print(f"💡 Performance analysis files saved to current directory.")
-        print(f"📊 Check the generated PNG files for detailed visualizations.")
+        print(f"Performance analysis files saved to current directory.")
+        print(f"Check the generated PNG files for detailed visualizations.")
             
     except Exception as e:
         print(f"\n" + "="*70)
-        print(f"❌ EXECUTION ERROR")
+        print(f"EXECUTION ERROR")
         print(f"=" * 70)
         print(f"Error details: {str(e)}")
-        print(f"💡 Try running the system again with option 1 (Quick Test) first.")
-        print(f"🔧 If the issue persists, check your data file and model file paths.")
+        print(f"Try running the system again with option 1 (Quick Test) first.")
+        print(f"If the issue persists, check your data file and model file paths.")
         import traceback
         traceback.print_exc()
 

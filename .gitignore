@@ -1,3 +1,29 @@
-.venv/
-*.csv
+
+# Python
 __pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Data files (too large for version control)
+*.csv
+
+# Generated reports
+# The four result figures displayed in the README are committed on purpose so the
+# reported numbers can be inspected without re-running the pipeline. Any other
+# generated figure is ignored.
+*_performance_analysis.png
+*_equity_curve.png
+unified_*_results.png
+!default_system_performance_analysis.png
+!default_system_equity_curve.png
+!unified_model_test_results.png
+!unified_price_model_performance.png
+
+# OS
+.DS_Store
+Thumbs.db
+!holdout_system_performance_analysis.png
+!holdout_system_equity_curve.png

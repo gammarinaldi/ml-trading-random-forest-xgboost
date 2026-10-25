@@ -26,7 +26,7 @@ def add_technical_indicators(df, price_col='close'):
     """
     Add technical indicators to improve price prediction
     """
-    print("  🔧 Adding technical indicators...")
+    print("Adding technical indicators...")
     
     # Simple Moving Averages
     df['sma_5'] = df[price_col].rolling(window=5).mean()
@@ -137,7 +137,7 @@ def calculate_direction_accuracy(y_true_price, y_pred_price, current_prices, thr
 # Load data from CSV file
 csv_file = 'EURUSDm_H1_201801020600_202412310000.csv'
 
-print(f"📈 Loading EURUSD data from CSV file: {csv_file}")
+print(f"Loading EURUSD data from CSV file: {csv_file}")
 
 try:
     # Try to load the CSV file
@@ -152,7 +152,7 @@ try:
         
         # Check if it's the standard MetaTrader format with tab separators
         if '<DATE>' in df.columns and '<TIME>' in df.columns and '<CLOSE>' in df.columns:
-            print("✅ Detected MetaTrader export format with tab separators")
+            print("Detected MetaTrader export format with tab separators")
             
             # Combine date and time columns
             df['datetime'] = df['<DATE>'] + ' ' + df['<TIME>']
@@ -170,52 +170,52 @@ try:
             data['close'] = pd.to_numeric(data['close'], errors='coerce')
             data = data.dropna()
             
-            print(f"✅ Successfully loaded CSV data with {len(data)} records")
-            print(f"📅 Data range: {data.index[0]} to {data.index[-1]}")
-            print(f"💰 Price range: {data['close'].min():.5f} to {data['close'].max():.5f}")
+            print(f"Successfully loaded CSV data with {len(data)} records")
+            print(f"Data range: {data.index[0]} to {data.index[-1]}")
+            print(f"Price range: {data['close'].min():.5f} to {data['close'].max():.5f}")
             
         else:
             raise ValueError("CSV format not recognized")
             
 except Exception as e:
-    print(f"❌ Error loading CSV file: {str(e)}")
+    print(f"Error loading CSV file: {str(e)}")
     exit(1)
 
 # Enhanced feature engineering
-print("\n🔧 Step 1/5: Enhanced feature engineering...")
+print("\nStep 1/5: Enhanced feature engineering...")
 data = add_technical_indicators(data, 'close')
 
 # Remove NaN values from technical indicators
 data = data.dropna()
-print(f"✅ Data after cleaning: {len(data)} records")
+print(f"Data after cleaning: {len(data)} records")
 
 # Define feature columns (all technical indicators)
 feature_cols = [col for col in data.columns if col not in ['close']]
-print(f"📊 Using {len(feature_cols)} features: {feature_cols[:5]}... (showing first 5)")
+print(f"Using {len(feature_cols)} features: {feature_cols[:5]}... (showing first 5)")
 
 # Split data
 training_size = int(len(data) * 0.70)
 train_data = data.iloc[:training_size]
 test_data = data.iloc[training_size:]
 
-print(f"\n📊 Data split:")
-print(f"  🏋️ Training: {len(train_data)} records ({training_size/len(data)*100:.1f}%)")
-print(f"  🧪 Testing: {len(test_data)} records ({(len(data)-training_size)/len(data)*100:.1f}%)")
+print(f"\nData split:")
+print(f"Training: {len(train_data)} records ({training_size/len(data)*100:.1f}%)")
+print(f"Testing: {len(test_data)} records ({(len(data)-training_size)/len(data)*100:.1f}%)")
 
 # Create sequences for training
-print("\n📦 Step 2/5: Creating feature sequences...")
+print("\nStep 2/5: Creating feature sequences...")
 X_train, y_train = create_feature_sequences(train_data, feature_cols, 'close', n_steps)
 X_test, y_test = create_feature_sequences(test_data, feature_cols, 'close', n_steps)
 
-print(f"✅ Training sequences: {X_train.shape}")
-print(f"✅ Test sequences: {X_test.shape}")
+print(f"Training sequences: {X_train.shape}")
+print(f"Test sequences: {X_test.shape}")
 
 # Create price regressor for price prediction
-print("\n📈 Step 3/5: Training XGBoost Price Regressor...")
+print("\nStep 3/5: Training XGBoost Price Regressor...")
 
 # Using XGBoost GPU directly for price regression
 import xgboost as xgb
-print("  🎮 Using XGBoost GPU for price regression!")
+print("Using XGBoost GPU for price regression!")
 price_regressor = Pipeline([
     ('scaler', StandardScaler()),
     ('xgb', xgb.XGBRegressor(
@@ -231,16 +231,16 @@ price_regressor = Pipeline([
         eval_metric='rmse'
     ))
 ])
-print("  ✅ Using XGBoost GPU regressor!")
+print("Using XGBoost GPU regressor!")
 
 # Train price regressor
-print(f"  🔄 Training XGBoost GPU Price Regressor (150 trees)...")
-print(f"  ⏳ This may take 15-30 seconds with GPU acceleration...")
+print(f"Training XGBoost GPU Price Regressor (150 trees)...")
+print(f"This may take 15-30 seconds with GPU acceleration...")
 price_regressor.fit(X_train, y_train)
-print("✅ Price regressor training completed!")
+print("Price regressor training completed!")
 
 # Evaluate model
-print("\n📋 Step 4/5: Evaluating model performance...")
+print("\nStep 4/5: Evaluating model performance...")
 
 # Price predictions
 y_pred_price = price_regressor.predict(X_test)
@@ -253,26 +253,26 @@ direction_accuracy, actual_dirs, pred_dirs = calculate_direction_accuracy(
     y_test, y_pred_price, current_prices_test
 )
 
-print(f"📊 Model Performance:")
-print(f"  📉 Price MSE: {price_mse:.8f}")
-print(f"  📈 Price R²: {price_r2:.4f}")
-print(f"  🎯 Direction Accuracy (derived): {direction_accuracy:.4f} ({direction_accuracy*100:.2f}%)")
+print(f"Model Performance:")
+print(f"Price MSE: {price_mse:.8f}")
+print(f"Price R²: {price_r2:.4f}")
+print(f"Direction Accuracy (derived): {direction_accuracy:.4f} ({direction_accuracy*100:.2f}%)")
 
 # Direction breakdown
 if len(actual_dirs) > 0:
     actual_dirs = np.array(actual_dirs)
     pred_dirs = np.array(pred_dirs)
     
-    print(f"\n📋 Direction Performance Breakdown:")
+    print(f"\nDirection Performance Breakdown:")
     for direction in [0, 1]:
         mask = actual_dirs == direction
         if np.sum(mask) > 0:
             acc = np.mean(pred_dirs[mask] == actual_dirs[mask]) * 100
             direction_name = {0: "DOWN", 1: "UP"}[direction]
-            print(f"  📊 {direction_name} accuracy: {acc:.1f}% ({np.sum(mask)} samples)")
+            print(f"{direction_name} accuracy: {acc:.1f}% ({np.sum(mask)} samples)")
 
 # Create visualizations
-print("\n📊 Step 5/5: Creating performance visualizations...")
+print("\nStep 5/5: Creating performance visualizations...")
 
 fig, axes = plt.subplots(2, 2, figsize=(15, 12))
 
@@ -307,13 +307,16 @@ if len(actual_dirs) > 0:
     axes[1,0].legend()
     axes[1,0].grid(True)
 
-# Sample price data with indicators
+# Sample price data with indicators.
+# Plot against positional integers for every series: the index is a DatetimeIndex,
+# and mixing datetime x-values with integer positions silently breaks the axis.
 sample_slice = data.tail(100)
-axes[1,1].plot(sample_slice['close'], label='Close Price', color='blue')
-axes[1,1].plot(sample_slice['sma_20'], label='SMA 20', color='orange', alpha=0.7)
-axes[1,1].plot(sample_slice['ema_10'], label='EMA 10', color='green', alpha=0.7)
-axes[1,1].fill_between(range(len(sample_slice)), 
-                      sample_slice['bb_lower'], sample_slice['bb_upper'], 
+x_sample = np.arange(len(sample_slice))
+axes[1,1].plot(x_sample, sample_slice['close'].to_numpy(), label='Close Price', color='blue')
+axes[1,1].plot(x_sample, sample_slice['sma_20'].to_numpy(), label='SMA 20', color='orange', alpha=0.7)
+axes[1,1].plot(x_sample, sample_slice['ema_10'].to_numpy(), label='EMA 10', color='green', alpha=0.7)
+axes[1,1].fill_between(x_sample,
+                      sample_slice['bb_lower'].to_numpy(), sample_slice['bb_upper'].to_numpy(),
                       alpha=0.2, color='gray', label='Bollinger Bands')
 axes[1,1].set_title('Sample Data with Technical Indicators')
 axes[1,1].set_xlabel('Time Steps')
@@ -323,11 +326,11 @@ axes[1,1].grid(True)
 
 plt.tight_layout()
 plt.savefig('unified_price_model_performance.png', dpi=300, bbox_inches='tight')
-print("📊 Performance visualization saved as 'unified_price_model_performance.png'")
+print("Performance visualization saved as 'unified_price_model_performance.png'")
 plt.close()
 
 # Save model
-print("\n💾 Saving unified price model...")
+print("\nSaving unified price model...")
 
 os.makedirs('models', exist_ok=True)
 
@@ -353,12 +356,12 @@ import json
 with open('models/unified_price_model_info.json', 'w') as f:
     json.dump(model_info, f, indent=4)
 
-print(f"✅ Model saved:")
-print(f"  📈 Unified price regressor: models/unified_price_regressor.pkl")
-print(f"  📋 Model info: models/unified_price_model_info.json")
+print(f"Model saved:")
+print(f"Unified price regressor: models/unified_price_regressor.pkl")
+print(f"Model info: models/unified_price_model_info.json")
 
 # Test unified prediction
-print(f"\n🧪 Testing unified prediction...")
+print(f"\nTesting unified prediction...")
 if len(X_test) > 0:
     sample_idx = 0
     sample_features = X_test[sample_idx:sample_idx+1]
@@ -371,24 +374,24 @@ if len(X_test) > 0:
     pred_direction = 1 if pred_price > current_price else 0
     actual_direction = 1 if actual_price > current_price else 0
     
-    direction_names = {0: "DOWN ↘", 1: "UP ↗"}
+    direction_names = {0: "DOWN", 1: "UP"}
     
-    print(f"🎯 Sample Unified Prediction:")
-    print(f"  💰 Current Price: {current_price:.5f}")
-    print(f"  📈 Predicted Price: {pred_price:.5f}")
-    print(f"  📊 Derived Direction: {direction_names.get(pred_direction, 'Unknown')}")
-    print(f"  ✅ Actual Price: {actual_price:.5f}")
-    print(f"  ✅ Actual Direction: {direction_names.get(actual_direction, 'Unknown')}")
+    print(f"Sample Unified Prediction:")
+    print(f"Current Price: {current_price:.5f}")
+    print(f"Predicted Price: {pred_price:.5f}")
+    print(f"Derived Direction: {direction_names.get(pred_direction, 'Unknown')}")
+    print(f"Actual Price: {actual_price:.5f}")
+    print(f"Actual Direction: {direction_names.get(actual_direction, 'Unknown')}")
     
-    direction_correct = "✅ CORRECT" if pred_direction == actual_direction else "❌ WRONG"
+    direction_correct = "CORRECT" if pred_direction == actual_direction else "WRONG"
     price_error = abs(pred_price - actual_price)
     
-    print(f"  🎯 Direction: {direction_correct}")
-    print(f"  📏 Price Error: {price_error:.5f} ({price_error/actual_price*10000:.1f} pips)")
+    print(f"Direction: {direction_correct}")
+    print(f"Price Error: {price_error:.5f} ({price_error/actual_price*10000:.1f} pips)")
 
-print(f"\n🎉 Unified model training completed!")
-print(f"📈 Price prediction R²: {price_r2:.4f}")
-print(f"🎯 Direction accuracy (derived): {direction_accuracy*100:.2f}%")
-print(f"✨ Approach: Single price model with consistent direction derivation")
-print(f"🚀 No more contradictory predictions!")
-print(f"\n✨ Ready to use! Run the updated test script.") 
+print(f"\nUnified model training completed!")
+print(f"Price prediction R²: {price_r2:.4f}")
+print(f"Direction accuracy (derived): {direction_accuracy*100:.2f}%")
+print(f"Approach: Single price model with consistent direction derivation")
+print(f"No more contradictory predictions!")
+print(f"\nReady to use! Run the updated test script.") 

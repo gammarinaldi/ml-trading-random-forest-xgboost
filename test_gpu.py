@@ -9,7 +9,7 @@ print("=" * 60)
 print(f"Number of GPUs: {torch.cuda.device_count()}")
 
 if torch.cuda.is_available():
-    print(f"CUDA Available: ✅ YES")
+    print(f"CUDA Available: YES")
     print(f"CUDA Version (PyTorch): {torch.version.cuda}")
     
     # Current GPU Details
@@ -52,7 +52,7 @@ if torch.cuda.is_available():
             print()
 
 else:
-    print(f"CUDA Available: ❌ NO")
+    print(f"CUDA Available: NO")
     print("CUDA is not available. Install PyTorch with CUDA support:")
     print("pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118")
 
@@ -75,17 +75,17 @@ if torch.cuda.is_available():
         # Create a simple tensor and move to GPU
         test_tensor = torch.randn(1000, 1000).to(device)
         result = torch.mm(test_tensor, test_tensor.t())
-        print("✅ GPU tensor operations: WORKING")
+        print("GPU tensor operations: WORKING")
         print(f"Test tensor shape: {test_tensor.shape}")
         print(f"Result tensor device: {result.device}")
         
         # Clean up
         del test_tensor, result
         torch.cuda.empty_cache()
-        print("✅ GPU memory cleanup: COMPLETED")
+        print("GPU memory cleanup: COMPLETED")
         
     except Exception as e:
-        print(f"❌ GPU test failed: {e}")
+        print(f"GPU test failed: {e}")
 
 print("\n" + "=" * 60)
 print("GPU TEST COMPLETE")

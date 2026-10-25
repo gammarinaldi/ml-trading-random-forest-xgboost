@@ -14,10 +14,10 @@ def load_unified_model():
     """
     if os.path.exists('models/unified_price_regressor.pkl'):
         model = joblib.load('models/unified_price_regressor.pkl')
-        print("✅ Unified price regressor loaded successfully!")
+        print("Unified price regressor loaded successfully!")
         return model
     else:
-        print("❌ Unified price regressor not found. Run the updated training script first.")
+        print("Unified price regressor not found. Run the updated training script first.")
         return None
 
 def load_unified_model_info():
@@ -25,7 +25,7 @@ def load_unified_model_info():
     Load unified model information
     """
     if not os.path.exists('models/unified_price_model_info.json'):
-        print("⚠️ Warning: Unified model info file not found.")
+        print("Warning: Unified model info file not found.")
         return None
     
     with open('models/unified_price_model_info.json', 'r') as f:
@@ -154,71 +154,71 @@ def main():
     # Load the unified model
     model = load_unified_model()
     if model is None:
-        print("❌ Cannot proceed without model. Please run the updated training script first.")
+        print("Cannot proceed without model. Please run the updated training script first.")
         return
     
     # Load model information
     model_info = load_unified_model_info()
     if model_info:
-        print("📊 Unified Model Information:")
-        print(f"  🔧 Model Type: {model_info.get('model_type', 'Unknown')}")
-        print(f"  📏 Time Steps: {model_info.get('n_steps', 'Unknown')}")
-        print(f"  📊 Features: {model_info.get('n_features', 'Unknown')}")
-        print(f"  🏋️ Training Size: {model_info.get('training_size', 'Unknown'):,}")
-        print(f"  🧪 Test Size: {model_info.get('test_size', 'Unknown'):,}")
-        print(f"  📈 Price R²: {model_info.get('price_r2', 0):.4f}")
-        print(f"  🎯 Direction Accuracy (derived): {model_info.get('direction_accuracy_derived', 0)*100:.2f}%")
-        print(f"  ✨ Approach: {model_info.get('approach', 'Unknown')}")
+        print("Unified Model Information:")
+        print(f"Model Type: {model_info.get('model_type', 'Unknown')}")
+        print(f"Time Steps: {model_info.get('n_steps', 'Unknown')}")
+        print(f"Features: {model_info.get('n_features', 'Unknown')}")
+        print(f"Training Size: {model_info.get('training_size', 'Unknown'):,}")
+        print(f"Test Size: {model_info.get('test_size', 'Unknown'):,}")
+        print(f"Price R²: {model_info.get('price_r2', 0):.4f}")
+        print(f"Direction Accuracy (derived): {model_info.get('direction_accuracy_derived', 0)*100:.2f}%")
+        print(f"Approach: {model_info.get('approach', 'Unknown')}")
         print()
     
     # Generate realistic sample data
     n_steps = model_info.get('n_steps', 100) if model_info else 100
-    print(f"🔄 Generating realistic sample data for testing...")
+    print(f"Generating realistic sample data for testing...")
     
     sample_data = generate_realistic_sample_data(n_steps + 100)
     
     # Add technical indicators
-    print("🔧 Adding technical indicators...")
+    print("Adding technical indicators...")
     sample_data = add_technical_indicators(sample_data, 'close')
     sample_data = sample_data.dropna()  # Remove NaN values from indicators
     
-    print(f"✅ Sample data prepared: {len(sample_data)} records")
-    print(f"📈 Price range: {sample_data['close'].min():.5f} to {sample_data['close'].max():.5f}")
+    print(f"Sample data prepared: {len(sample_data)} records")
+    print(f"Price range: {sample_data['close'].min():.5f} to {sample_data['close'].max():.5f}")
     
     # Get feature columns (exclude close)
     feature_cols = [col for col in sample_data.columns if col not in ['close']]
     
     if len(sample_data) < n_steps:
-        print(f"❌ Not enough data for prediction. Need {n_steps}, got {len(sample_data)}")
+        print(f"Not enough data for prediction. Need {n_steps}, got {len(sample_data)}")
         return
     
     # Make a single prediction
-    print(f"\n🎯 Making unified prediction...")
+    print(f"\nMaking unified prediction...")
     try:
         direction_pred, price_pred, confidence = predict_price_and_direction(
             model, sample_data, feature_cols, n_steps
         )
         
         current_price = sample_data['close'].iloc[-1]
-        direction_names = {0: "DOWN ↘", 1: "UP ↗"}
+        direction_names = {0: "DOWN", 1: "UP"}
         
-        print(f"📊 Unified Prediction Results:")
-        print(f"  💰 Current Price: {current_price:.5f}")
-        print(f"  📈 Predicted Price: {price_pred:.5f}")
-        print(f"  🎯 Derived Direction: {direction_names.get(direction_pred, 'Unknown')}")
-        print(f"  📏 Predicted Change: {price_pred - current_price:.5f}")
-        print(f"  🎪 Confidence: {confidence:.4f} ({confidence*100:.2f}%)")
+        print(f"Unified Prediction Results:")
+        print(f"Current Price: {current_price:.5f}")
+        print(f"Predicted Price: {price_pred:.5f}")
+        print(f"Derived Direction: {direction_names.get(direction_pred, 'Unknown')}")
+        print(f"Predicted Change: {price_pred - current_price:.5f}")
+        print(f"Confidence: {confidence:.4f} ({confidence*100:.2f}%)")
         
         # Show consistency check
         actual_direction = 1 if price_pred > current_price else 0
-        print(f"  ✅ Direction-Price Consistency: {'✅ CONSISTENT' if direction_pred == actual_direction else '❌ INCONSISTENT'}")
+        print(f"Direction-Price Consistency: {'CONSISTENT' if direction_pred == actual_direction else 'INCONSISTENT'}")
         
     except Exception as e:
-        print(f"❌ Error making prediction: {str(e)}")
+        print(f"Error making prediction: {str(e)}")
         return
     
     # Test multiple predictions
-    print(f"\n🔄 Testing rolling predictions...")
+    print(f"\nTesting rolling predictions...")
     
     n_test_predictions = min(50, len(sample_data) - n_steps - 1)
     predictions = []
@@ -279,15 +279,21 @@ def main():
         # Direction accuracy
         direction_accuracy = np.mean(direction_preds == direction_actuals) * 100
         
-        print(f"\n📊 Unified Test Results on {len(predictions)} predictions:")
-        print(f"  💰 Price Prediction:")
-        print(f"    📉 MSE: {price_mse:.8f}")
-        print(f"    📏 MAE: {price_mae:.6f}")
-        print(f"    📐 RMSE: {price_rmse:.6f}")
-        print(f"    💱 Average pip error: {price_mae/np.mean(actuals)*10000:.1f} pips")
+        print(f"\nUnified Test Results on {len(predictions)} predictions:")
+        print(f"Price Prediction:")
+        print(f"MSE: {price_mse:.8f}")
+        print(f"MAE: {price_mae:.6f}")
+        print(f"RMSE: {price_rmse:.6f}")
+        print(f"Average pip error: {price_mae/np.mean(actuals)*10000:.1f} pips")
         
-        print(f"  🎯 Direction Prediction (derived from price):")
-        print(f"    🎪 Accuracy: {direction_accuracy:.2f}%")
+        print(f"Direction Prediction (derived from price):")
+        print(f"Accuracy: {direction_accuracy:.2f}%")
+
+        # Base rate: always predicting the majority class. On synthetic data with an
+        # embedded trend this is a high bar, and accuracy must be read against it.
+        base_rate = max(np.mean(direction_actuals == 1), np.mean(direction_actuals == 0)) * 100
+        print(f"Majority-class base rate: {base_rate:.2f}%")
+        print(f"Edge over base rate: {direction_accuracy - base_rate:+.2f} points")
         
         # Direction breakdown
         for direction in [0, 1]:
@@ -295,7 +301,7 @@ def main():
             if np.sum(mask) > 0:
                 acc = np.mean(direction_preds[mask] == direction_actuals[mask]) * 100
                 direction_name = {0: "DOWN", 1: "UP"}[direction]
-                print(f"    📊 {direction_name} accuracy: {acc:.1f}% ({np.sum(mask)} samples)")
+                print(f"{direction_name} accuracy: {acc:.1f}% ({np.sum(mask)} samples)")
         
         # Consistency check - should always be 100% by design
         # Use same logic as predict_price_and_direction function with correct indices
@@ -312,16 +318,16 @@ def main():
             consistent_directions.append(expected_dir)
         
         consistency = np.mean(direction_preds == np.array(consistent_directions)) * 100
-        print(f"    ✅ Direction-Price Consistency: {consistency:.1f}% (should be 100%)")
+        print(f"Direction-Price Consistency: {consistency:.1f}% (should be 100%)")
         
         # Debug: Show small vs large price changes
         small_changes = sum(1 for idx, orig_i in enumerate(prediction_indices) 
                            if abs((predictions[idx] - sample_data['close'].iloc[orig_i + n_steps - 1]) / 
                                  sample_data['close'].iloc[orig_i + n_steps - 1]) <= threshold)
-        print(f"    📊 Small price changes (≤{threshold:.4f}): {small_changes}/{len(predictions)} ({small_changes/len(predictions)*100:.1f}%)")
+        print(f"Small price changes (<={threshold:.4f}): {small_changes}/{len(predictions)} ({small_changes/len(predictions)*100:.1f}%)")
     
     # Create unified visualization
-    print(f"\n📊 Creating unified visualization...")
+    print(f"\nCreating unified visualization...")
     
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
     
@@ -355,13 +361,16 @@ def main():
         axes[1,0].legend()
         axes[1,0].grid(True)
         
-        # Sample price data with indicators
+        # Sample price data with indicators.
+        # Plot against positional integers for every series: the index is a DatetimeIndex,
+        # and mixing datetime x-values with integer positions silently breaks the axis.
         sample_slice = sample_data.tail(100)
-        axes[1,1].plot(sample_slice['close'], label='Close Price', color='blue')
-        axes[1,1].plot(sample_slice['sma_20'], label='SMA 20', color='orange', alpha=0.7)
-        axes[1,1].plot(sample_slice['ema_10'], label='EMA 10', color='green', alpha=0.7)
-        axes[1,1].fill_between(range(len(sample_slice)), 
-                              sample_slice['bb_lower'], sample_slice['bb_upper'], 
+        x_sample = np.arange(len(sample_slice))
+        axes[1,1].plot(x_sample, sample_slice['close'].to_numpy(), label='Close Price', color='blue')
+        axes[1,1].plot(x_sample, sample_slice['sma_20'].to_numpy(), label='SMA 20', color='orange', alpha=0.7)
+        axes[1,1].plot(x_sample, sample_slice['ema_10'].to_numpy(), label='EMA 10', color='green', alpha=0.7)
+        axes[1,1].fill_between(x_sample,
+                              sample_slice['bb_lower'].to_numpy(), sample_slice['bb_upper'].to_numpy(),
                               alpha=0.2, color='gray', label='Bollinger Bands')
         axes[1,1].set_title('Sample Data with Technical Indicators')
         axes[1,1].set_xlabel('Time Steps')
@@ -371,23 +380,28 @@ def main():
     
     plt.tight_layout()
     plt.savefig('unified_model_test_results.png', dpi=300, bbox_inches='tight')
-    print("📊 Unified visualization saved as 'unified_model_test_results.png'")
+    print("Unified visualization saved as 'unified_model_test_results.png'")
     plt.close()
     
-    print(f"\n🎉 Unified model testing completed!")
+    print(f"\nUnified model testing completed!")
     
     if len(predictions) > 0:
-        if direction_accuracy > 50:
-            print(f"✅ Direction accuracy ({direction_accuracy:.1f}%) is better than random!")
-        else:
-            print(f"📊 Direction accuracy ({direction_accuracy:.1f}%) - derived from excellent price model")
+        print(f"NOTE: this script evaluates on SYNTHETIC data generated by")
+        print(f"generate_realistic_sample_data(), which embeds an upward trend. Accuracy here")
+        print(f"measures nothing about real EURUSD and must not be quoted as a result. It is a")
+        print(f"smoke test that the model loads and produces consistent output. For the real")
+        print(f"hold-out numbers, see models/unified_price_model_info.json and the README.")
         
-        print(f"🚀 Key benefit: No contradictory predictions!")
-        print(f"✅ Price and direction are always consistent")
-    
-    print(f"💡 The unified model uses {len(feature_cols)} technical indicators")
-    print(f"✨ Approach: Single price model with consistent direction derivation")
-    print(f"🎯 Eliminates contradictions between separate models!")
+        if direction_accuracy > base_rate:
+            print(f"Direction accuracy ({direction_accuracy:.1f}%) exceeds the base rate "
+                  f"({base_rate:.1f}%) on this synthetic sample, which is expected given the")
+            print(f"embedded trend and the 30 usable samples - not evidence of an edge.")
+        else:
+            print(f"Direction accuracy ({direction_accuracy:.1f}%) does not exceed the base rate "
+                  f"({base_rate:.1f}%) even on trended synthetic data.")
+        
+        print(f"Direction and price predictions are internally consistent by construction,")
+        print(f"since direction is derived from the sign of the predicted price change.")
 
 if __name__ == "__main__":
     main() 
